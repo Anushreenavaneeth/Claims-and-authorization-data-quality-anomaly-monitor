@@ -1,0 +1,20 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-brand-dark text-slate-100 font-sans antialiased;
+    background-color: #0b0f19;
+  }
+}
+
+/* Micro-animations */
+.hover-card-effect {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.hover-card-effect:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 10px 20px -5px rgba(59, 130, 246, 0.3);
+  border-color: #3b82f6;
+}
