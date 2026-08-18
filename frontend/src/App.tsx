@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { 
   Activity, 
   AlertTriangle, 
@@ -7,7 +7,6 @@ import {
   Clock, 
   FileText, 
   Play, 
-  RefreshCw, 
   HelpCircle, 
   UserCheck, 
   Bell,
