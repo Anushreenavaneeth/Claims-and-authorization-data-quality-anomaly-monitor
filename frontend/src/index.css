@@ -3,18 +3,50 @@
 @tailwind utilities;
 
 @layer base {
+  :root {
+    --font-display: 'Syne', sans-serif;
+    --font-body: 'Inter', sans-serif;
+    --font-mono: 'JetBrains Mono', monospace;
+  }
+
   body {
-    @apply bg-brand-dark text-slate-100 font-sans antialiased;
-    background-color: #0b0f19;
+    font-family: var(--font-body);
+    background-color: #06080f;
+    color: #e2e8f0;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Display headings use Syne */
+  h1, h2, h3, .font-display {
+    font-family: var(--font-display);
+  }
+
+  code, pre, .font-mono {
+    font-family: var(--font-mono);
   }
 }
 
-/* Micro-animations */
-.hover-card-effect {
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+/* Respect reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .pipeline-node-active { animation: none; opacity: 0.7; }
+  .data-flow-line { animation: none; }
+  * { transition-duration: 0.01ms !important; }
 }
-.hover-card-effect:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 10px 20px -5px rgba(59, 130, 246, 0.3);
-  border-color: #3b82f6;
+@keyframes pipeline-pulse {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 1; }
+}
+
+@keyframes data-flow {
+  0% { stroke-dashoffset: 40; }
+  100% { stroke-dashoffset: 0; }
+}
+
+.pipeline-node-active {
+  animation: pipeline-pulse 2s ease-in-out infinite;
+}
+
+.data-flow-line {
+  stroke-dasharray: 6 4;
+  animation: data-flow 1.2s linear infinite;
 }
