@@ -3,31 +3,38 @@ from fastapi.middleware.cors import CORSMiddleware
 import json
 
 from app.config import settings
+from app.routers import auth, protected
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
     version="1.0.0",
-    description="Backend API for Healthcare Data Operations Platform"
+    description="Backend API for Healthcare Data Operations Platform",
 )
 
-# CORS configuration
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["http://localhost:3000", "http://localhost:5173"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+# Routers
+app.include_router(auth.router)
+app.include_router(protected.router)
+
+
 @app.get("/")
 def read_root():
     return {"message": "Welcome to Healthcare Data Operations Platform API"}
+
 
 @app.get("/health")
 def health_check():
     return {"status": "healthy", "env": settings.ENV}
 
-# Simple WebSocket connection manager for live alerts
+
+# WebSocket connection manager
 class ConnectionManager:
     def __init__(self):
         self.active_connections: list[WebSocket] = []
@@ -43,16 +50,16 @@ class ConnectionManager:
         for connection in self.active_connections:
             await connection.send_text(message)
 
+
 manager = ConnectionManager()
+
 
 @app.websocket("/ws/telemetry")
 async def websocket_endpoint(websocket: WebSocket):
     await manager.connect(websocket)
     try:
         while True:
-            # Receive message from client if any
             data = await websocket.receive_text()
-            # Broadcast received message back as a simple echo/telemetry ping test
             await manager.broadcast(json.dumps({"type": "ping", "data": data}))
     except WebSocketDisconnect:
         manager.disconnect(websocket)
