@@ -1,0 +1,49 @@
+{
+  "required_columns": [
+    "claim_id",
+    "member_id",
+    "provider_id",
+    "claim_date",
+    "service_type",
+    "procedure_code",
+    "diagnosis_code",
+    "claim_amount",
+    "claim_status",
+    "denial_code",
+    "processing_time_minutes"
+  ],
+  "conditional_required": {
+    "denial_code": {
+      "column": "claim_status",
+      "equals": ["DENIED"]
+    }
+  },
+  "date_format": "%Y-%m-%d",
+  "types": {
+    "claim_id": "string",
+    "member_id": "string",
+    "provider_id": "string",
+    "claim_date": "date",
+    "service_type": "string",
+    "procedure_code": "string",
+    "diagnosis_code": "string",
+    "claim_amount": "float",
+    "claim_status": "string",
+    "denial_code": "string",
+    "processing_time_minutes": "float"
+  },
+  "allowed_values": {
+    "claim_status": [
+      "PAID",
+      "PENDING",
+      "DENIED"
+    ]
+  },
+  "non_negative": [
+    "claim_amount",
+    "processing_time_minutes"
+  ],
+  "unique_columns": [
+    "claim_id"
+  ]
+}
