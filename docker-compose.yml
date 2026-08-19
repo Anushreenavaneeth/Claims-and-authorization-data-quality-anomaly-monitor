@@ -1,0 +1,64 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: hdop-postgres
+    environment:
+      POSTGRES_DB: healthcare_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - hdop-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: hdop-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - hdop-network
+
+  backend:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/backend.Dockerfile
+    container_name: hdop-backend
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/healthcare_db
+      - REDIS_URL=redis://redis:6379/0
+      - ENV=production
+      - JWT_SECRET=supersecretjwtkeychangeinproduction12345
+    ports:
+      - "8000:8000"
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - hdop-network
+
+  frontend:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/frontend.Dockerfile
+    container_name: hdop-frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    networks:
+      - hdop-network
+
+networks:
+  hdop-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
