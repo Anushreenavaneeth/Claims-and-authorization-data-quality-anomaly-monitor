@@ -11,21 +11,36 @@ class PipelineStatus(str, Enum):
     FAILED = "failed"
     ANOMALOUS = "anomalous"
 
+# ── Anomaly enums — match frontend types exactly ──────────────────────────
+
+class SourceDataset(str, Enum):
+    CLAIMS        = "CLAIMS"
+    PHARMACY      = "PHARMACY"
+    AUTHORIZATION = "AUTHORIZATION"
+
+class AnomalyType(str, Enum):
+    MISSING_FIELD          = "MISSING_FIELD"
+    TYPE_MISMATCH          = "TYPE_MISMATCH"
+    NEGATIVE_VALUE         = "NEGATIVE_VALUE"
+    DUPLICATE_RECORD       = "DUPLICATE_RECORD"
+    SLA_PROCESSING_SPIKE   = "SLA_PROCESSING_SPIKE"
+    INVALID_DOMAIN         = "INVALID_DOMAIN"
+
 class AnomalySeverity(str, Enum):
-    LOW = "low"
-    MEDIUM = "medium"
-    HIGH = "high"
-    CRITICAL = "critical"
+    CRITICAL = "CRITICAL"
+    HIGH     = "HIGH"
+    MEDIUM   = "MEDIUM"
+    LOW      = "LOW"
 
 class AnomalyStatus(str, Enum):
-    DETECTED = "detected"
-    UNDER_INVESTIGATION = "under_investigation"
-    REMEDIATED = "remediated"
-    FALSE_POSITIVE = "false_positive"
+    OPEN        = "OPEN"
+    IN_PROGRESS = "IN_PROGRESS"
+    RESOLVED    = "RESOLVED"
+    IGNORED     = "IGNORED"
 
 class SLABreachRisk(str, Enum):
-    NONE = "none"
-    LOW = "low"
-    MEDIUM = "medium"
-    HIGH = "high"
+    NONE     = "none"
+    LOW      = "low"
+    MEDIUM   = "medium"
+    HIGH     = "high"
     BREACHED = "breached"

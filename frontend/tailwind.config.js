@@ -7,9 +7,9 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        display: ['Syne', 'sans-serif'],
+        display: ['Plus Jakarta Sans', 'sans-serif'],
         body:    ['Inter', 'sans-serif'],
-        mono:    ['JetBrains Mono', 'monospace'],
+        mono:    ['IBM Plex Mono', 'monospace'],
       },
     },
   },
