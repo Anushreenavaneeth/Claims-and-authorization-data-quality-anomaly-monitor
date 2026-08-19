@@ -1,0 +1,34 @@
+{
+  "required_columns": [
+    "provider_id",
+    "drug_id",
+    "prescription_date",
+    "total_claims",
+    "total_drug_cost",
+    "total_beneficiaries",
+    "thirty_day_fills",
+    "days_supply",
+    "processing_time_minutes"
+  ],
+  "date_format": "%Y-%m-%d",
+  "types": {
+    "provider_id": "string",
+    "drug_id": "string",
+    "prescription_date": "date",
+    "total_claims": "integer",
+    "total_drug_cost": "float",
+    "total_beneficiaries": "integer",
+    "thirty_day_fills": "integer",
+    "days_supply": "integer",
+    "processing_time_minutes": "float"
+  },
+  "non_negative": [
+    "total_claims",
+    "total_drug_cost",
+    "total_beneficiaries",
+    "thirty_day_fills",
+    "days_supply",
+    "processing_time_minutes"
+  ],
+  "unique_columns": []
+}

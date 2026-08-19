@@ -147,3 +147,9 @@ dist/
 # SQLite databases
 *.db
 *.sqlite
+
+
+data_ingestion/output/
+__pycache__/
+*.pyc
+.pytest_cache/
