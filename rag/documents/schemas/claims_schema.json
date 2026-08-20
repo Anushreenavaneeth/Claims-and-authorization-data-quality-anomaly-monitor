@@ -1,0 +1,96 @@
+{
+  "dataset": "claims",
+  "description": "Expected schema for healthcare claims data.",
+  "fields": [
+    {
+      "name": "claim_id",
+      "type": "string",
+      "required": true,
+      "description": "Unique identifier for the claim."
+    },
+    {
+      "name": "member_id",
+      "type": "string",
+      "required": true,
+      "description": "Identifier of the member associated with the claim."
+    },
+    {
+      "name": "provider_id",
+      "type": "string",
+      "required": true,
+      "description": "Identifier of the healthcare provider."
+    },
+    {
+      "name": "service_date",
+      "type": "date",
+      "required": true,
+      "description": "Date on which the healthcare service was provided."
+    },
+    {
+      "name": "submission_date",
+      "type": "date",
+      "required": true,
+      "description": "Date on which the claim was submitted."
+    },
+    {
+      "name": "adjudication_date",
+      "type": "date",
+      "required": false,
+      "description": "Date on which the claim was adjudicated, when applicable."
+    },
+    {
+      "name": "claim_type",
+      "type": "string",
+      "required": true,
+      "description": "Type of healthcare claim."
+    },
+    {
+      "name": "claim_status",
+      "type": "string",
+      "required": true,
+      "description": "Current processing status of the claim."
+    },
+    {
+      "name": "cpt_hcpcs_code",
+      "type": "string",
+      "required": false,
+      "description": "Procedure or service code when applicable."
+    },
+    {
+      "name": "icd10_code",
+      "type": "string",
+      "required": false,
+      "description": "Diagnosis code when applicable."
+    },
+    {
+      "name": "place_of_service",
+      "type": "string",
+      "required": false,
+      "description": "Place where the healthcare service was provided."
+    },
+    {
+      "name": "billed_amount",
+      "type": "number",
+      "required": true,
+      "description": "Amount billed by the provider."
+    },
+    {
+      "name": "allowed_amount",
+      "type": "number",
+      "required": false,
+      "description": "Amount allowed according to the applicable policy or contract."
+    },
+    {
+      "name": "paid_amount",
+      "type": "number",
+      "required": false,
+      "description": "Amount paid for the claim."
+    },
+    {
+      "name": "member_liability",
+      "type": "number",
+      "required": false,
+      "description": "Amount assigned to member responsibility."
+    }
+  ]
+}
