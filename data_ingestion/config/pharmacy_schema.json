@@ -30,5 +30,16 @@
     "days_supply",
     "processing_time_minutes"
   ],
-  "unique_columns": []
+  "unique_columns": [],
+  "column_aliases": {
+    "provider_id": ["providerid", "provider_no", "prov_id", "npi"],
+    "drug_id": ["drugid", "ndc", "drug_code", "ndc_code"],
+    "prescription_date": ["rx_date", "prescriptiondate", "fill_date", "date_filled"],
+    "total_claims": ["claim_count", "totalclaims", "num_claims"],
+    "total_drug_cost": ["drug_cost", "totaldrugcost", "total_cost"],
+    "total_beneficiaries": ["beneficiaries", "totalbeneficiaries", "beneficiary_count"],
+    "thirty_day_fills": ["30_day_fills", "thirtydayfills", "fills_30d"],
+    "days_supply": ["dayssupply", "supply_days"],
+    "processing_time_minutes": ["processing_time", "turnaround_minutes", "processing_mins"]
+  }
 }
