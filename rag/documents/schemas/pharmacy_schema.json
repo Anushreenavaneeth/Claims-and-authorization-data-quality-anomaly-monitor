@@ -1,0 +1,102 @@
+{
+  "dataset": "pharmacy",
+  "description": "Expected schema for healthcare pharmacy data.",
+  "fields": [
+    {
+      "name": "prescription_id",
+      "type": "string",
+      "required": true,
+      "description": "Unique identifier for the prescription transaction."
+    },
+    {
+      "name": "member_id",
+      "type": "string",
+      "required": true,
+      "description": "Identifier of the member associated with the prescription."
+    },
+    {
+      "name": "pharmacy_id",
+      "type": "string",
+      "required": true,
+      "description": "Identifier of the dispensing pharmacy."
+    },
+    {
+      "name": "provider_id",
+      "type": "string",
+      "required": true,
+      "description": "Identifier of the prescribing provider."
+    },
+    {
+      "name": "ndc",
+      "type": "string",
+      "required": true,
+      "description": "National Drug Code identifying the medication."
+    },
+    {
+      "name": "prescription_date",
+      "type": "date",
+      "required": true,
+      "description": "Date on which the prescription was issued."
+    },
+    {
+      "name": "fill_date",
+      "type": "date",
+      "required": true,
+      "description": "Date on which the prescription was filled."
+    },
+    {
+      "name": "quantity_dispensed",
+      "type": "number",
+      "required": true,
+      "description": "Quantity of medication dispensed."
+    },
+    {
+      "name": "days_supply",
+      "type": "number",
+      "required": true,
+      "description": "Number of days of medication supplied."
+    },
+    {
+      "name": "refill_number",
+      "type": "integer",
+      "required": false,
+      "description": "Refill sequence number when applicable."
+    },
+    {
+      "name": "prescription_status",
+      "type": "string",
+      "required": true,
+      "description": "Current status of the prescription transaction."
+    },
+    {
+      "name": "drug_name",
+      "type": "string",
+      "required": false,
+      "description": "Name of the medication."
+    },
+    {
+      "name": "drug_type",
+      "type": "string",
+      "required": false,
+      "description": "Medication classification such as generic or brand."
+    },
+    {
+      "name": "controlled_substance",
+      "type": "boolean",
+      "required": false,
+      "description": "Indicates whether the medication is classified as a controlled substance."
+    },
+    {
+      "name": "billed_amount",
+      "type": "number",
+      "required": false,
+      "description": "Amount billed for the pharmacy transaction."
+    },
+    {
+      "name": "paid_amount",
+      "type": "number",
+      "required": false,
+      "description": "Amount paid for the pharmacy transaction."
+    }
+  ]
+}

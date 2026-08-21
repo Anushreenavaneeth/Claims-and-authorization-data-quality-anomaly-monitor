@@ -1,0 +1,62 @@
+{
+  "required_columns": [
+    "claim_id",
+    "member_id",
+    "provider_id",
+    "claim_date",
+    "service_type",
+    "procedure_code",
+    "diagnosis_code",
+    "claim_amount",
+    "claim_status",
+    "denial_code",
+    "processing_time_minutes"
+  ],
+  "conditional_required": {
+    "denial_code": {
+      "column": "claim_status",
+      "equals": ["DENIED"]
+    }
+  },
+  "date_format": "%Y-%m-%d",
+  "types": {
+    "claim_id": "string",
+    "member_id": "string",
+    "provider_id": "string",
+    "claim_date": "date",
+    "service_type": "string",
+    "procedure_code": "string",
+    "diagnosis_code": "string",
+    "claim_amount": "float",
+    "claim_status": "string",
+    "denial_code": "string",
+    "processing_time_minutes": "float"
+  },
+  "allowed_values": {
+    "claim_status": [
+      "PAID",
+      "PENDING",
+      "DENIED"
+    ]
+  },
+  "non_negative": [
+    "claim_amount",
+    "processing_time_minutes"
+  ],
+  "unique_columns": [
+    "claim_id"
+  ],
+  "column_aliases": {
+    "claim_id": ["claimid", "claim_no", "claim_number", "claim number"],
+    "member_id": ["memberid", "member_no", "patient_id", "member number"],
+    "provider_id": ["providerid", "provider_no", "prov_id", "npi"],
+    "claim_date": ["claimdate", "date_of_service", "service_date", "dos"],
+    "service_type": ["servicetype", "type_of_service", "svc_type"],
+    "procedure_code": ["proc_code", "cpt_code", "procedurecode"],
+    "diagnosis_code": ["dx_code", "diagnosiscode", "icd_code"],
+    "claim_amount": ["claim_amt", "billed_amount", "amount", "claimamount"],
+    "claim_status": ["status", "claimstatus"],
+    "denial_code": ["denial_reason", "denial_reason_code", "denialcode"],
+    "processing_time_minutes": ["processing_time", "turnaround_minutes", "processing_mins"]
+  }
+}

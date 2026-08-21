@@ -1,0 +1,71 @@
+{
+  "dataset": "common_healthcare",
+  "description": "Generic schema definitions and common metadata applicable across healthcare datasets.",
+  "common_fields": [
+    {
+      "name": "record_id",
+      "type": "string",
+      "required": true,
+      "description": "Unique identifier for the individual record."
+    },
+    {
+      "name": "source",
+      "type": "string",
+      "required": true,
+      "description": "Source system or dataset from which the record originated."
+    },
+    {
+      "name": "batch_id",
+      "type": "string",
+      "required": false,
+      "description": "Identifier of the batch containing the record, when applicable."
+    },
+    {
+      "name": "ingestion_timestamp",
+      "type": "datetime",
+      "required": false,
+      "description": "Timestamp when the record entered the data pipeline."
+    },
+    {
+      "name": "processing_timestamp",
+      "type": "datetime",
+      "required": false,
+      "description": "Timestamp associated with processing the record."
+    },
+    {
+      "name": "created_timestamp",
+      "type": "datetime",
+      "required": false,
+      "description": "Timestamp when the source record was created."
+    },
+    {
+      "name": "updated_timestamp",
+      "type": "datetime",
+      "required": false,
+      "description": "Timestamp when the source record was last updated."
+    }
+  ],
+  "common_quality_requirements": {
+    "completeness": "Required fields must be populated according to the applicable domain schema and business conditions.",
+    "uniqueness": "Records must satisfy the applicable uniqueness constraints.",
+    "validity": "Values must conform to expected data types, formats, and allowed values.",
+    "consistency": "Related fields and records must satisfy applicable logical relationships.",
+    "timeliness": "Data should be available within the applicable operational timeframe.",
+    "freshness": "Data age should remain within the configured freshness requirement.",
+    "integrity": "Required relationships between related records must be preserved."
+  },
+  "schema_validation": {
+    "checks": [
+      "Required fields",
+      "Unexpected fields",
+      "Data types",
+      "Date and datetime formats",
+      "Numeric formats",
+      "Allowed categorical values",
+      "Identifier formats",
+      "Nullability",
+      "Schema version compatibility"
+    ]
+  },
+  "important_rule": "Dataset-specific schemas and domain Knowledge Bases take precedence over generic common-healthcare definitions."
+}

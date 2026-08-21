@@ -1,0 +1,84 @@
+{
+  "dataset": "authorization",
+  "description": "Expected schema for healthcare authorization data.",
+  "fields": [
+    {
+      "name": "authorization_id",
+      "type": "string",
+      "required": true,
+      "description": "Unique identifier for the authorization."
+    },
+    {
+      "name": "member_id",
+      "type": "string",
+      "required": true,
+      "description": "Identifier of the member associated with the authorization."
+    },
+    {
+      "name": "provider_id",
+      "type": "string",
+      "required": true,
+      "description": "Identifier of the healthcare provider."
+    },
+    {
+      "name": "authorization_date",
+      "type": "date",
+      "required": true,
+      "description": "Date on which the authorization was submitted or created."
+    },
+    {
+      "name": "service_date",
+      "type": "date",
+      "required": true,
+      "description": "Date associated with the requested healthcare service."
+    },
+    {
+      "name": "service_type",
+      "type": "string",
+      "required": true,
+      "description": "Type of healthcare service requiring authorization."
+    },
+    {
+      "name": "authorization_status",
+      "type": "string",
+      "required": true,
+      "description": "Current authorization status."
+    },
+    {
+      "name": "authorization_type",
+      "type": "string",
+      "required": true,
+      "description": "Type of authorization request."
+    },
+    {
+      "name": "urgency",
+      "type": "string",
+      "required": false,
+      "description": "Urgency classification when applicable."
+    },
+    {
+      "name": "submission_channel",
+      "type": "string",
+      "required": true,
+      "description": "Channel through which the authorization was submitted."
+    },
+    {
+      "name": "processing_time_hours",
+      "type": "number",
+      "required": false,
+      "description": "Time taken to process the authorization in hours."
+    },
+    {
+      "name": "missing_document_count",
+      "type": "integer",
+      "required": false,
+      "description": "Number of missing documents associated with the authorization."
+    },
+    {
+      "name": "resubmission_count",
+      "type": "integer",
+      "required": false,
+      "description": "Number of times the authorization was resubmitted."
+    }
+  ]
+}
