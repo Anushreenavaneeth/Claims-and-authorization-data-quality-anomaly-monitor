@@ -82,34 +82,111 @@ class Retriever:
 
     def _extract_evidence_terms(
         self,
-        anomaly: Dict[str, Any]
-    ) -> List[str]:
-        """
-        Extract important evidence terms from
-        the ML anomaly record.
+        anomaly
+    ):
 
-        These terms receive an additional ranking
-        signal during retrieval.
+        """
+        Extract retrieval evidence terms from the
+        normalized anomaly record.
+
+        Supports:
+
+        - Dataset
+        - Detection type
+        - Rule-based evidence
+        - ML evidence
+        - Bayesian evidence
+        - Behavioral evidence
+        - Source explanation
         """
 
         terms = []
 
-        # -------------------------------------------------
-        # Dataset
-        # -------------------------------------------------
+        # =================================================
+        # Helper
+        # =================================================
 
-        dataset_type = anomaly.get(
-            "dataset_type"
+        def add_term(value):
+
+            if value is None:
+                return
+
+            if isinstance(
+                value,
+                bool
+            ):
+
+                if value:
+                    value = str(
+                        value
+                    ).lower()
+
+                else:
+                    return
+
+            value = str(
+                value
+            ).strip()
+
+            if not value:
+                return
+
+            if value.lower() in {
+                "none",
+                "null",
+                "false",
+                "unknown",
+                "nan"
+            }:
+                return
+
+            if value not in terms:
+
+                terms.append(
+                    value
+                )
+
+        # =================================================
+        # Dataset
+        # =================================================
+
+        add_term(
+            anomaly.get(
+                "dataset_type"
+            )
         )
 
-        if dataset_type:
-            terms.append(
-                str(dataset_type)
+        # =================================================
+        # Detection Summary
+        # =================================================
+
+        detection = anomaly.get(
+            "detection_summary",
+            {}
+        )
+
+        if isinstance(
+            detection,
+            dict
+        ):
+
+            anomaly_type = detection.get(
+                "anomaly_type"
             )
 
-        # -------------------------------------------------
+            if anomaly_type:
+
+                for value in str(
+                    anomaly_type
+                ).split(","):
+
+                    add_term(
+                        value.strip()
+                    )
+
+        # =================================================
         # Rule-Based Evidence
-        # -------------------------------------------------
+        # =================================================
 
         rule_evidence = anomaly.get(
             "rule_based_evidence",
@@ -133,14 +210,13 @@ class Retriever:
                     "rule_name"
                 )
 
-                if rule_name:
-                    terms.append(
-                        str(rule_name)
-                    )
+                add_term(
+                    rule_name
+                )
 
-        # -------------------------------------------------
-        # ML Contributing Features
-        # -------------------------------------------------
+        # =================================================
+        # ML Evidence
+        # =================================================
 
         ml_evidence = anomaly.get(
             "ml_based_evidence",
@@ -151,6 +227,16 @@ class Retriever:
             ml_evidence,
             dict
         ):
+
+            # ML model name
+
+            add_term(
+                ml_evidence.get(
+                    "model"
+                )
+            )
+
+            # Contributing features
 
             features = ml_evidence.get(
                 "contributing_features",
@@ -164,85 +250,348 @@ class Retriever:
 
                 for feature in features:
 
-                    if not isinstance(
-                        feature,
-                        dict
-                    ):
-                        continue
-
-                    feature_name = feature.get(
-                        "feature"
+                    add_term(
+                        feature
                     )
 
-                    if feature_name:
-                        terms.append(
-                            str(feature_name)
+            # ML evidence types
+
+            types = ml_evidence.get(
+                "types"
+            )
+
+            if types:
+
+                for value in str(
+                    types
+                ).split(","):
+
+                    add_term(
+                        value.strip()
+                    )
+
+            # ML summary
+
+            summary = ml_evidence.get(
+                "summary"
+            )
+
+            if summary:
+
+                summary_lower = str(
+                    summary
+                ).lower()
+
+                if "isolation forest" in summary_lower:
+
+                    add_term(
+                        "Isolation Forest"
+                    )
+
+                if "xgboost" in summary_lower:
+
+                    add_term(
+                        "XGBoost"
+                    )
+
+                if "random forest" in summary_lower:
+
+                    add_term(
+                        "Random Forest"
+                    )
+
+                if "outlier" in summary_lower:
+
+                    add_term(
+                        "outlier"
+                    )
+
+        # =================================================
+        # Bayesian Evidence
+        # =================================================
+
+        bayesian_evidence = anomaly.get(
+            "bayesian_evidence",
+            {}
+        )
+
+        if isinstance(
+            bayesian_evidence,
+            dict
+        ):
+
+            if bayesian_evidence.get(
+                "anomaly"
+            ) is True:
+
+                add_term(
+                    "bayesian"
+                )
+
+        # =================================================
+        # Behavioral Evidence
+        # =================================================
+
+        behavioral_evidence = anomaly.get(
+            "behavioral_evidence",
+            []
+        )
+
+        if isinstance(
+            behavioral_evidence,
+            list
+        ):
+
+            behavioral_detected = False
+
+            for item in behavioral_evidence:
+
+                if not isinstance(
+                    item,
+                    dict
+                ):
+                    continue
+
+                if item.get(
+                    "detected"
+                ) is True:
+
+                    behavioral_detected = True
+
+                evidence_type = item.get(
+                    "type"
+                )
+
+                if evidence_type:
+
+                    add_term(
+                        evidence_type
+                    )
+
+                description = item.get(
+                    "description"
+                )
+
+                if description:
+
+                    description_lower = (
+                        str(
+                            description
+                        ).lower()
+                    )
+
+                    if "cost per claim" in description_lower:
+
+                        add_term(
+                            "cost_per_claim"
                         )
 
-        # -------------------------------------------------
-        # Record Context
-        # -------------------------------------------------
+                    if "historical" in description_lower:
 
-        record_context = anomaly.get(
+                        add_term(
+                            "historical_behavior"
+                        )
+
+                    if "behavior" in description_lower:
+
+                        add_term(
+                            "behavior"
+                        )
+
+            if behavioral_detected:
+
+                add_term(
+                    "behavioral"
+                )
+
+        # =================================================
+        # Source Explanation
+        # =================================================
+
+        source_explanation = anomaly.get(
+            "source_explanation",
+            {}
+        )
+
+        if isinstance(
+            source_explanation,
+            dict
+        ):
+
+            explanation = source_explanation.get(
+                "explanation"
+            )
+
+            if explanation:
+
+                explanation_lower = str(
+                    explanation
+                ).lower()
+
+                # -----------------------------
+                # Missing data
+                # -----------------------------
+
+                if "missing" in explanation_lower:
+
+                    add_term(
+                        "missing"
+                    )
+
+                    add_term(
+                        "completeness"
+                    )
+
+                # -----------------------------
+                # Suppressed values
+                # -----------------------------
+
+                if "suppressed" in explanation_lower:
+
+                    add_term(
+                        "suppressed"
+                    )
+
+                # -----------------------------
+                # Cost per claim
+                # -----------------------------
+
+                if "cost per claim" in explanation_lower:
+
+                    add_term(
+                        "cost_per_claim"
+                    )
+
+                # -----------------------------
+                # Behavioral change
+                # -----------------------------
+
+                if "behavior" in explanation_lower:
+
+                    add_term(
+                        "behavior"
+                    )
+
+                    add_term(
+                        "historical_behavior"
+                    )
+
+                # -----------------------------
+                # Provider
+                # -----------------------------
+
+                if "provider" in explanation_lower:
+
+                    add_term(
+                        "provider"
+                    )
+
+                # -----------------------------
+                # Authorization
+                # -----------------------------
+
+                if "authorization" in explanation_lower:
+
+                    add_term(
+                        "authorization"
+                    )
+
+                # -----------------------------
+                # Claims
+                # -----------------------------
+
+                if "claim" in explanation_lower:
+
+                    add_term(
+                        "claims"
+                    )
+
+                # -----------------------------
+                # Pharmacy
+                # -----------------------------
+
+                if "pharmacy" in explanation_lower:
+
+                    add_term(
+                        "pharmacy"
+                    )
+
+        # =================================================
+        # Context For RAG
+        # =================================================
+
+        context_for_rag = anomaly.get(
             "record_context",
             {}
         )
 
         if isinstance(
-            record_context,
+            context_for_rag,
             dict
         ):
 
-            context_fields = [
-                "service_type",
-                "procedure_code",
-                "authorization_status",
-                "authorization_type",
-                "urgency",
-                "submission_channel"
-            ]
+            rag_context = context_for_rag.get(
+                "context_for_rag"
+            )
 
-            for field in context_fields:
+            if rag_context:
 
-                value = record_context.get(
-                    field
-                )
+                context_lower = str(
+                    rag_context
+                ).lower()
 
-                if value is not None:
+                if "cost per claim" in context_lower:
 
-                    terms.append(
-                        str(value)
+                    add_term(
+                        "cost_per_claim"
                     )
 
-        # -------------------------------------------------
+                if "behavior" in context_lower:
+
+                    add_term(
+                        "behavior"
+                    )
+
+                if "historical" in context_lower:
+
+                    add_term(
+                        "historical_behavior"
+                    )
+
+                if "missing" in context_lower:
+
+                    add_term(
+                        "missing"
+                    )
+
+                if "suppressed" in context_lower:
+
+                    add_term(
+                        "suppressed"
+                    )
+
+        # =================================================
         # Remove duplicates
-        # -------------------------------------------------
+        # =================================================
 
-        unique_terms = []
-
-        seen = set()
+        normalized_terms = []
 
         for term in terms:
 
-            normalized = (
-                term.strip().lower()
-            )
+            term = str(
+                term
+            ).strip()
 
-            if not normalized:
+            if not term:
                 continue
 
-            if normalized in seen:
-                continue
+            if term not in normalized_terms:
 
-            seen.add(
-                normalized
-            )
+                normalized_terms.append(
+                    term
+                )
 
-            unique_terms.append(
-                term.strip()
-            )
-
-        return unique_terms
+        return normalized_terms
 
     # =====================================================
     # Normalize Text
@@ -252,6 +601,7 @@ class Retriever:
         self,
         text: str
     ) -> str:
+
         """
         Normalize text for evidence matching.
         """
@@ -277,6 +627,7 @@ class Retriever:
         result: Dict[str, Any],
         evidence_terms: List[str]
     ) -> float:
+
         """
         Calculate evidence matching score.
 
@@ -285,6 +636,7 @@ class Retriever:
         """
 
         if not evidence_terms:
+
             return 0.0
 
         text = result.get(
@@ -299,6 +651,7 @@ class Retriever:
         )
 
         if not normalized_text:
+
             return 0.0
 
         matched = 0
@@ -312,6 +665,7 @@ class Retriever:
             )
 
             if not normalized_term:
+
                 continue
 
             if normalized_term in normalized_text:
@@ -319,11 +673,14 @@ class Retriever:
                 matched += 1
 
         if matched == 0:
+
             return 0.0
 
         return (
             matched /
-            len(evidence_terms)
+            len(
+                evidence_terms
+            )
         )
 
     # =====================================================
@@ -335,6 +692,7 @@ class Retriever:
         result: Dict[str, Any],
         evidence_terms: List[str]
     ) -> Dict[str, float]:
+
         """
         Combine:
 
@@ -376,12 +734,14 @@ class Retriever:
         self,
         results: List[Dict[str, Any]]
     ) -> List[Dict[str, Any]]:
+
         """
         Prefer different knowledge sources while
         preserving high-relevance results.
         """
 
         if not results:
+
             return []
 
         sorted_results = sorted(
@@ -399,10 +759,10 @@ class Retriever:
 
         selected_sources: Set = set()
 
-        # -------------------------------------------------
-        # First pass:
+        # =================================================
+        # First pass
         # Prefer different sources
-        # -------------------------------------------------
+        # =================================================
 
         for result in sorted_results:
 
@@ -432,9 +792,11 @@ class Retriever:
             )
 
             if key in selected_keys:
+
                 continue
 
             if source in selected_sources:
+
                 continue
 
             selected.append(
@@ -450,12 +812,13 @@ class Retriever:
             )
 
             if len(selected) >= self.top_k:
+
                 break
 
-        # -------------------------------------------------
-        # Second pass:
+        # =================================================
+        # Second pass
         # Fill remaining slots
-        # -------------------------------------------------
+        # =================================================
 
         if len(selected) < self.top_k:
 
@@ -487,6 +850,7 @@ class Retriever:
                 )
 
                 if key in selected_keys:
+
                     continue
 
                 selected.append(
@@ -498,11 +862,12 @@ class Retriever:
                 )
 
                 if len(selected) >= self.top_k:
+
                     break
 
-        # -------------------------------------------------
+        # =================================================
         # Final ordering
-        # -------------------------------------------------
+        # =================================================
 
         selected.sort(
             key=lambda x: x.get(
@@ -522,6 +887,7 @@ class Retriever:
         self,
         rag_input: Any
     ) -> Dict[str, Any]:
+
         """
         Retrieve knowledge separately for every
         ML anomaly record.
@@ -532,36 +898,39 @@ class Retriever:
 
         2. List of anomaly dictionaries
 
-        3. Normalized ingestion object containing:
+        3. Normalized ingestion object:
+
            {
                "records": [...],
                "record_count": ...
            }
         """
 
-        # -------------------------------------------------
+        # =================================================
         # Normalize Input
-        # -------------------------------------------------
+        # =================================================
 
         if isinstance(
             rag_input,
             dict
         ):
 
-            # Complete normalized ingestion result
             if (
                 "records" in rag_input
                 and isinstance(
-                    rag_input["records"],
+                    rag_input[
+                        "records"
+                    ],
                     list
                 )
             ):
 
                 anomaly_records = (
-                    rag_input["records"]
+                    rag_input[
+                        "records"
+                    ]
                 )
 
-            # Single anomaly record
             else:
 
                 anomaly_records = [
@@ -582,12 +951,9 @@ class Retriever:
                 "list or dictionary."
             )
 
-        # -------------------------------------------------
+        # =================================================
         # Build Queries
-        #
-        # IMPORTANT:
-        # Pass anomaly_records, not rag_input.
-        # -------------------------------------------------
+        # =================================================
 
         queries = (
             self.query_builder.build_queries(
@@ -607,9 +973,9 @@ class Retriever:
 
         anomaly_results = []
 
-        # -------------------------------------------------
+        # =================================================
         # Process Each Anomaly
-        # -------------------------------------------------
+        # =================================================
 
         for anomaly, query in zip(
             anomaly_records,
@@ -620,9 +986,11 @@ class Retriever:
                 anomaly,
                 dict
             ):
+
                 continue
 
             if not query.strip():
+
                 continue
 
             # ---------------------------------------------
@@ -695,6 +1063,7 @@ class Retriever:
                 )
 
                 if key in seen:
+
                     continue
 
                 seen.add(
@@ -788,9 +1157,9 @@ class Retriever:
                 }
             )
 
-        # -------------------------------------------------
+        # =================================================
         # Final Response
-        # -------------------------------------------------
+        # =================================================
 
         return {
             "records": anomaly_results,
@@ -808,6 +1177,7 @@ class Retriever:
         self,
         rag_input: Any
     ) -> str:
+
         """
         Convert retrieval results into structured
         context for XAI and Generation.

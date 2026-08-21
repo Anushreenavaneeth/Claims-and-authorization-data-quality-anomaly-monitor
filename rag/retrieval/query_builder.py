@@ -1,33 +1,18 @@
 """
-Build semantic retrieval queries from normalized ML anomaly records.
+Universal Query Builder
 
-Supports:
-- Authorization
+Creates retrieval queries from the normalized RAG record.
+
+Supported datasets:
 - Claims
+- Authorization
 - Pharmacy
-- Generic future datasets
-
-Expected common structure:
-
-{
-    "dataset_type": "...",
-    "record_id": "...",
-    "detection_summary": {...},
-    "rule_based_evidence": [...],
-    "ml_based_evidence": {...},
-    "record_context": {...},
-    "sla": ...
-}
 """
 
 from typing import Any, Dict, List
 
 
 class QueryBuilder:
-    """
-    Converts normalized ML anomaly records into
-    evidence-rich semantic retrieval queries.
-    """
 
     # =====================================================
     # Build One Query
@@ -38,465 +23,351 @@ class QueryBuilder:
         anomaly: Dict[str, Any]
     ) -> str:
 
-        if not isinstance(
-            anomaly,
-            dict
-        ):
+        if not isinstance(anomaly, dict):
             return ""
 
         query_parts = []
 
-        # =================================================
+        # -------------------------------------------------
         # Dataset
-        # =================================================
+        # -------------------------------------------------
 
-        dataset_type = anomaly.get(
+        dataset = anomaly.get(
             "dataset_type",
-            "unknown"
+            "healthcare"
         )
+
+        query_parts.append(
+            f"Healthcare data quality anomaly in {dataset} dataset."
+        )
+
+        # -------------------------------------------------
+        # Record ID
+        # -------------------------------------------------
 
         record_id = anomaly.get(
-            "record_id",
-            "unknown"
+            "record_id"
         )
 
-        query_parts.append(
-            f"Healthcare data quality anomaly "
-            f"in {dataset_type} dataset."
-        )
+        if record_id:
+            query_parts.append(
+                f"Record ID: {record_id}."
+            )
 
-        query_parts.append(
-            f"Record ID: {record_id}."
-        )
-
-        # =================================================
+        # -------------------------------------------------
         # Detection Summary
-        # =================================================
+        # -------------------------------------------------
 
         detection = anomaly.get(
             "detection_summary",
             {}
         )
 
-        if not isinstance(
-            detection,
-            dict
-        ):
-            detection = {}
+        if isinstance(detection, dict):
 
-        final_anomaly = detection.get(
-            "final_anomaly"
-        )
+            if detection.get("final_anomaly") is not None:
+                query_parts.append(
+                    f"Final anomaly: {detection.get('final_anomaly')}."
+                )
 
-        final_severity = detection.get(
-            "final_severity"
-        )
+            if detection.get("final_severity"):
+                query_parts.append(
+                    f"Severity: {detection.get('final_severity')}."
+                )
 
-        final_risk_score = detection.get(
-            "final_risk_score"
-        )
+            if detection.get("final_risk_score") is not None:
+                query_parts.append(
+                    f"Risk score: {detection.get('final_risk_score')}."
+                )
 
-        ml_anomaly_score = detection.get(
-            "ml_anomaly_score"
-        )
+            if detection.get("anomaly_type"):
+                query_parts.append(
+                    f"Signal types: {detection.get('anomaly_type')}."
+                )
 
-        anomaly_type = detection.get(
-            "anomaly_type"
-        )
+        # -------------------------------------------------
+        # Rule Evidence
+        # -------------------------------------------------
 
-        if final_anomaly is not None:
-
-            query_parts.append(
-                f"Final anomaly: "
-                f"{final_anomaly}."
-            )
-
-        if final_severity:
-
-            query_parts.append(
-                f"Severity: "
-                f"{final_severity}."
-            )
-
-        if final_risk_score is not None:
-
-            query_parts.append(
-                f"Final risk score: "
-                f"{final_risk_score}."
-            )
-
-        if ml_anomaly_score is not None:
-
-            query_parts.append(
-                f"ML anomaly score: "
-                f"{ml_anomaly_score}."
-            )
-
-        if anomaly_type:
-
-            query_parts.append(
-                f"Anomaly type: "
-                f"{anomaly_type}."
-            )
-
-        # =================================================
-        # Rule-Based Evidence
-        # =================================================
-
-        rule_evidence = anomaly.get(
+        rules = anomaly.get(
             "rule_based_evidence",
             []
         )
 
-        if not isinstance(
-            rule_evidence,
-            list
-        ):
-            rule_evidence = []
+        if isinstance(rules, list) and rules:
 
-        rule_parts = []
+            rule_names = []
+            rule_reasons = []
 
-        for rule in rule_evidence:
+            for rule in rules:
 
-            if not isinstance(
-                rule,
-                dict
-            ):
-                continue
+                if not isinstance(rule, dict):
+                    continue
 
-            rule_name = rule.get(
-                "rule_name"
-            )
+                name = rule.get("rule_name")
+                reason = rule.get("reason")
 
-            status = rule.get(
-                "status"
-            )
+                if name:
+                    rule_names.append(name)
 
-            reason = rule.get(
-                "reason"
-            )
+                if reason:
+                    rule_reasons.append(reason)
 
-            if not rule_name:
-                continue
-
-            rule_text = str(
-                rule_name
-            )
-
-            if status:
-
-                rule_text += (
-                    f" ({status})"
+            if rule_names:
+                query_parts.append(
+                    "Rule violations: "
+                    + ", ".join(rule_names)
+                    + "."
                 )
 
-            if reason:
-
-                rule_text += (
-                    f": {reason}"
+            if rule_reasons:
+                query_parts.append(
+                    "Rule reasons: "
+                    + "; ".join(rule_reasons)
+                    + "."
                 )
 
-            rule_parts.append(
-                rule_text
-            )
+        # -------------------------------------------------
+        # ML Evidence
+        # -------------------------------------------------
 
-        if rule_parts:
+        ml = anomaly.get(
+            "ml_based_evidence",
+            {}
+        )
 
-            query_parts.append(
-                "Rule-based anomalies: "
-                + "; ".join(
-                    rule_parts
+        if isinstance(ml, dict):
+
+            model = ml.get("model")
+
+            if model:
+                query_parts.append(
+                    f"ML model: {model}."
                 )
-                + "."
+
+            if ml.get("is_anomaly") is not None:
+                query_parts.append(
+                    f"ML anomaly: {ml.get('is_anomaly')}."
+                )
+
+            score = ml.get("anomaly_score")
+
+            if score is not None:
+                query_parts.append(
+                    f"ML anomaly score: {score}."
+                )
+
+            prediction = ml.get("prediction")
+
+            if prediction is not None:
+                query_parts.append(
+                    f"ML prediction: {prediction}."
+                )
+
+            features = ml.get(
+                "contributing_features",
+                []
             )
 
-        # =================================================
-        # ML-Based Evidence
-        # =================================================
+            if isinstance(features, list) and features:
 
-        ml_evidence = anomaly.get(
-            "ml_based_evidence"
+                query_parts.append(
+                    "Contributing features: "
+                    + ", ".join(map(str, features))
+                    + "."
+                )
+
+            summary = ml.get("summary")
+
+            if summary:
+                query_parts.append(
+                    f"ML summary: {summary}."
+                )
+
+        # -------------------------------------------------
+        # Bayesian Evidence
+        # -------------------------------------------------
+
+        bayesian = anomaly.get(
+            "bayesian_evidence",
+            {}
         )
 
-        if not isinstance(
-            ml_evidence,
-            dict
-        ):
-            ml_evidence = {}
+        if isinstance(bayesian, dict):
 
-        model = ml_evidence.get(
-            "model"
-        )
+            if bayesian.get("anomaly") is not None:
+                query_parts.append(
+                    f"Bayesian anomaly: {bayesian.get('anomaly')}."
+                )
 
-        is_anomaly = ml_evidence.get(
-            "is_anomaly"
-        )
+            probability = bayesian.get("probability")
 
-        anomaly_score = ml_evidence.get(
-            "anomaly_score"
-        )
+            if probability is not None:
+                query_parts.append(
+                    f"Bayesian probability: {probability}."
+                )
 
-        prediction = ml_evidence.get(
-            "prediction"
-        )
+            score = bayesian.get("score")
 
-        if model:
+            if score is not None:
+                query_parts.append(
+                    f"Bayesian score: {score}."
+                )
 
-            query_parts.append(
-                f"ML model: "
-                f"{model}."
-            )
+        # -------------------------------------------------
+        # Behavioral Evidence
+        # -------------------------------------------------
 
-        if is_anomaly is not None:
-
-            query_parts.append(
-                f"ML anomaly: "
-                f"{is_anomaly}."
-            )
-
-        if anomaly_score is not None:
-
-            query_parts.append(
-                f"ML anomaly score: "
-                f"{anomaly_score}."
-            )
-
-        if prediction is not None:
-
-            query_parts.append(
-                f"ML prediction: "
-                f"{prediction}."
-            )
-
-        # =================================================
-        # Contributing Features
-        # =================================================
-
-        features = ml_evidence.get(
-            "contributing_features",
+        behavioral = anomaly.get(
+            "behavioral_evidence",
             []
         )
 
-        if not isinstance(
-            features,
-            list
-        ):
-            features = []
-
-        for feature in features:
-
-            if not isinstance(
-                feature,
-                dict
-            ):
-                continue
-
-            feature_name = feature.get(
-                "feature"
-            )
-
-            if not feature_name:
-                continue
-
-            observed_value = feature.get(
-                "observed_value"
-            )
-
-            expected_lower = feature.get(
-                "expected_lower"
-            )
-
-            expected_upper = feature.get(
-                "expected_upper"
-            )
-
-            direction = feature.get(
-                "direction"
-            )
-
-            deviation_score = feature.get(
-                "deviation_score"
-            )
-
-            feature_parts = [
-                f"ML feature "
-                f"{feature_name}"
-            ]
-
-            if observed_value is not None:
-
-                feature_parts.append(
-                    f"observed value "
-                    f"{observed_value}"
-                )
-
-            if expected_lower is not None:
-
-                feature_parts.append(
-                    f"expected lower "
-                    f"{expected_lower}"
-                )
-
-            if expected_upper is not None:
-
-                feature_parts.append(
-                    f"expected upper "
-                    f"{expected_upper}"
-                )
-
-            if direction:
-
-                feature_parts.append(
-                    f"direction "
-                    f"{direction}"
-                )
-
-            if deviation_score is not None:
-
-                feature_parts.append(
-                    f"deviation score "
-                    f"{deviation_score}"
-                )
+        if isinstance(behavioral, list) and behavioral:
 
             query_parts.append(
-                ", ".join(
-                    feature_parts
-                )
-                + "."
+                "Behavioral anomaly detected."
             )
 
-        # =================================================
-        # Record Context
-        #
-        # Generic:
-        # Do NOT hard-code authorization fields.
-        # Every available Claims/Authorization/
-        # Pharmacy context field can contribute
-        # to semantic retrieval.
-        # =================================================
+            descriptions = []
 
-        record_context = anomaly.get(
+            for item in behavioral:
+
+                if not isinstance(item, dict):
+                    continue
+
+                desc = item.get("description")
+
+                if desc:
+                    descriptions.append(desc)
+
+            if descriptions:
+                query_parts.append(
+                    "Behavioral evidence: "
+                    + "; ".join(descriptions)
+                    + "."
+                )
+
+        # -------------------------------------------------
+        # Record Context
+        # -------------------------------------------------
+
+        context = anomaly.get(
             "record_context",
             {}
         )
 
-        if not isinstance(
-            record_context,
-            dict
-        ):
-            record_context = {}
+        if isinstance(context, dict):
 
-        context_parts = []
+            context_parts = []
 
-        for field, value in record_context.items():
+            important_fields = [
+                "plan_id",
+                "authorization_id",
+                "reference_number",
+                "issuer_name",
+                "state",
+                "plan_type",
+                "metal_level",
+                "patient_id",
+                "provider_id",
+                "payer_id",
+                "authorization_type",
+                "service_code",
+                "service_description"
+            ]
 
-            if value is None:
-                continue
+            for field in important_fields:
 
-            if isinstance(
-                value,
-                (dict, list)
-            ):
-                continue
+                value = context.get(field)
 
-            field_name = (
-                str(field)
-                .replace("_", " ")
-            )
+                if value in [None, "", []]:
+                    continue
 
-            context_parts.append(
-                f"{field_name}: "
-                f"{value}"
-            )
-
-        if context_parts:
-
-            query_parts.append(
-                "Record context: "
-                + "; ".join(
-                    context_parts
+                context_parts.append(
+                    f"{field.replace('_',' ')}: {value}"
                 )
-                + "."
-            )
 
-        # =================================================
+            if context_parts:
+                query_parts.append(
+                    "Record context: "
+                    + "; ".join(context_parts)
+                    + "."
+                )
+
+        # -------------------------------------------------
         # Source Explanation
-        #
-        # Claims adapter preserves:
-        # explanation
-        # likely_cause
-        # recommended_fix
-        #
-        # These are useful retrieval signals.
-        # =================================================
+        # -------------------------------------------------
 
-        source_explanation = anomaly.get(
+        explanation = anomaly.get(
             "source_explanation",
             {}
         )
 
-        if not isinstance(
-            source_explanation,
-            dict
-        ):
-            source_explanation = {}
+        if isinstance(explanation, dict):
 
-        explanation = source_explanation.get(
-            "explanation"
-        )
+            text = explanation.get("explanation")
 
-        likely_cause = source_explanation.get(
-            "likely_cause"
-        )
+            if text:
+                query_parts.append(
+                    f"Detected pattern explanation: {text}"
+                )
 
-        recommended_fix = source_explanation.get(
-            "recommended_fix"
-        )
+            cause = explanation.get("likely_cause")
 
-        if explanation:
+            if cause:
+                query_parts.append(
+                    f"Likely cause: {cause}"
+                )
 
-            query_parts.append(
-                f"Detected pattern explanation: "
-                f"{explanation}"
-            )
+            fix = explanation.get("recommended_fix")
 
-        if likely_cause:
+            if fix:
+                query_parts.append(
+                    f"Recommended fix: {fix}"
+                )
 
-            query_parts.append(
-                f"Likely cause: "
-                f"{likely_cause}"
-            )
-
-        if recommended_fix:
-
-            query_parts.append(
-                f"Recommended fix: "
-                f"{recommended_fix}"
-            )
-
-        # =================================================
+        # -------------------------------------------------
         # SLA
-        # =================================================
+        # -------------------------------------------------
 
-        sla = anomaly.get(
-            "sla"
-        )
+        sla = anomaly.get("sla")
 
         if sla:
-
             query_parts.append(
-                f"SLA: {sla}."
+                f"SLA status: {sla}."
             )
 
-        # =================================================
-        # Final Query
-        # =================================================
+        # -------------------------------------------------
+        # Dataset-specific retrieval intent
+        # -------------------------------------------------
 
-        return " ".join(
-            query_parts
-        ).strip()
+        if dataset == "claims":
+
+            query_parts.append(
+                "Find healthcare claims data quality validation rules, missing data patterns, suppressed values, root causes, and remediation procedures."
+            )
+
+        elif dataset == "authorization":
+
+            query_parts.append(
+                "Find healthcare authorization validation rules, prior authorization anomalies, provider and payer data quality issues, and remediation procedures."
+            )
+
+        elif dataset == "pharmacy":
+
+            query_parts.append(
+                "Find pharmacy claims validation rules, cost-per-claim anomalies, behavioral pattern changes, Bayesian anomaly guidance, and remediation procedures."
+            )
+
+        # -------------------------------------------------
+        # Final Query
+        # -------------------------------------------------
+
+        return " ".join(query_parts).strip()
 
     # =====================================================
-    # Build Multiple Queries
+    # Multiple Queries
     # =====================================================
 
     def build_queries(
@@ -506,75 +377,38 @@ class QueryBuilder:
 
         queries = []
 
-        # -------------------------------------------------
-        # Complete normalized ingestion result
-        # -------------------------------------------------
-
-        if isinstance(
-            rag_input,
-            dict
-        ):
+        if isinstance(rag_input, dict):
 
             if (
                 "records" in rag_input
-                and isinstance(
-                    rag_input["records"],
-                    list
-                )
+                and isinstance(rag_input["records"], list)
             ):
 
-                rag_input = (
-                    rag_input["records"]
-                )
+                rag_input = rag_input["records"]
 
             else:
 
-                query = self.build_query(
-                    rag_input
-                )
+                query = self.build_query(rag_input)
 
                 if query:
-
-                    queries.append(
-                        query
-                    )
+                    queries.append(query)
 
                 return queries
 
-        # -------------------------------------------------
-        # List of records
-        # -------------------------------------------------
+        if isinstance(rag_input, list):
 
-        if isinstance(
-            rag_input,
-            list
-        ):
+            for record in rag_input:
 
-            for anomaly in rag_input:
-
-                if not isinstance(
-                    anomaly,
-                    dict
-                ):
+                if not isinstance(record, dict):
                     continue
 
-                query = self.build_query(
-                    anomaly
-                )
+                query = self.build_query(record)
 
                 if query:
-
-                    queries.append(
-                        query
-                    )
+                    queries.append(query)
 
             return queries
 
-        # -------------------------------------------------
-        # Invalid input
-        # -------------------------------------------------
-
         raise TypeError(
-            "RAG input must be either "
-            "a JSON list or JSON object."
+            "RAG input must be a list or dictionary."
         )
