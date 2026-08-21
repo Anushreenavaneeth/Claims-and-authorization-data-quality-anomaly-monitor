@@ -1,0 +1,14 @@
+{
+  "total_records": 4956,
+  "duplicate_keys": 0,
+  "bayesian_anomalies": 248,
+  "rule_anomalies": 1960,
+  "ml_evidence_records": 240,
+  "final_anomalies": 2135,
+  "final_anomaly_percentage": 43.0791,
+  "critical_records": 82,
+  "high_records": 149,
+  "medium_records": 1904,
+  "low_records": 2821,
+  "status": "PASSED"
+}

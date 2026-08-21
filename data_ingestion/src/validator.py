@@ -2,10 +2,20 @@ import json
 from pathlib import Path
 import pandas as pd
 
+from schema_matcher import apply_column_resolution
+
 def load_schema(path):
     return json.loads(Path(path).read_text())
 
 def validate_dataframe(df, schema):
+    # Column-name tolerance: before any rule runs, rename incoming columns
+    # onto the schema's canonical names via alias lookup -> fuzzy fallback
+    # (see schema_matcher.py). A column named "ClaimID" or "claim_number"
+    # is treated as claim_id instead of being flagged missing/unexpected.
+    # Columns that can't be resolved at all pass through unchanged and
+    # still surface as "unexpected columns" below, same as before.
+    df, column_resolution = apply_column_resolution(df, schema)
+
     issues = []
     bad_rows = set()
 
@@ -91,6 +101,7 @@ def validate_dataframe(df, schema):
         "missing_columns": missing,
         "unexpected_columns": unexpected,
         "issues": issues,
-        "status": "FAIL" if has_errors else "PASS"
+        "status": "FAIL" if has_errors else "PASS",
+        "column_resolution": column_resolution,
     }
     return valid, invalid, report

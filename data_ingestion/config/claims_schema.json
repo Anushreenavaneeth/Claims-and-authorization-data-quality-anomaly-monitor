@@ -45,5 +45,18 @@
   ],
   "unique_columns": [
     "claim_id"
-  ]
+  ],
+  "column_aliases": {
+    "claim_id": ["claimid", "claim_no", "claim_number", "claim number"],
+    "member_id": ["memberid", "member_no", "patient_id", "member number"],
+    "provider_id": ["providerid", "provider_no", "prov_id", "npi"],
+    "claim_date": ["claimdate", "date_of_service", "service_date", "dos"],
+    "service_type": ["servicetype", "type_of_service", "svc_type"],
+    "procedure_code": ["proc_code", "cpt_code", "procedurecode"],
+    "diagnosis_code": ["dx_code", "diagnosiscode", "icd_code"],
+    "claim_amount": ["claim_amt", "billed_amount", "amount", "claimamount"],
+    "claim_status": ["status", "claimstatus"],
+    "denial_code": ["denial_reason", "denial_reason_code", "denialcode"],
+    "processing_time_minutes": ["processing_time", "turnaround_minutes", "processing_mins"]
+  }
 }

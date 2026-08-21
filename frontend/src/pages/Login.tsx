@@ -1,4 +1,4 @@
-import { useState, FormEvent, useEffect, useRef, useCallback } from 'react';
+import { useState, FormEvent, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 import { useAuth } from '../auth/AuthContext';
@@ -234,58 +234,6 @@ function ParticleCanvas() {
 }
 
 /* ─────────────────────────────────────────────
-   3D TILT CARD — mouse-tracking perspective
-───────────────────────────────────────────── */
-function TiltCard({ children }: { children: React.ReactNode }) {
-  const cardRef = useRef<HTMLDivElement>(null);
-  const rafRef  = useRef<number>(0);
-  const target  = useRef({ rx: 0, ry: 0 });
-  const current = useRef({ rx: 0, ry: 0 });
-
-  const onMove = useCallback((e: MouseEvent) => {
-    const card = cardRef.current;
-    if (!card) return;
-    const rect = card.getBoundingClientRect();
-    const cx = rect.left + rect.width / 2;
-    const cy = rect.top  + rect.height / 2;
-    const dx = (e.clientX - cx) / (rect.width  / 2);
-    const dy = (e.clientY - cy) / (rect.height / 2);
-    target.current = { rx: -dy * 8, ry: dx * 8 };
-  }, []);
-
-  const onLeave = useCallback(() => {
-    target.current = { rx: 0, ry: 0 };
-  }, []);
-
-  useEffect(() => {
-    const animate = () => {
-      const ease = 0.08;
-      current.current.rx += (target.current.rx - current.current.rx) * ease;
-      current.current.ry += (target.current.ry - current.current.ry) * ease;
-      if (cardRef.current) {
-        cardRef.current.style.transform =
-          `perspective(900px) rotateX(${current.current.rx}deg) rotateY(${current.current.ry}deg) translateZ(0px)`;
-      }
-      rafRef.current = requestAnimationFrame(animate);
-    };
-    rafRef.current = requestAnimationFrame(animate);
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseleave', onLeave);
-    return () => {
-      cancelAnimationFrame(rafRef.current);
-      window.removeEventListener('mousemove', onMove);
-      window.removeEventListener('mouseleave', onLeave);
-    };
-  }, [onMove, onLeave]);
-
-  return (
-    <div ref={cardRef} style={{ transformStyle: 'preserve-3d', willChange: 'transform' }}>
-      {children}
-    </div>
-  );
-}
-
-/* ─────────────────────────────────────────────
    MAIN LOGIN PAGE
 ───────────────────────────────────────────── */
 function validate(email: string, password: string) {
@@ -342,13 +290,12 @@ export default function Login() {
 
       {/* 3D tilt card — glassmorphism over the canvas */}
       <div className="relative z-10 w-full flex items-center justify-center px-4 py-12">
-        <TiltCard>
+        <div>
           {/* Glow ring behind card — depth illusion */}
           <div
             className="absolute -inset-6 rounded-3xl opacity-40 blur-2xl pointer-events-none"
             style={{
               background: 'radial-gradient(ellipse at 40% 50%, rgba(59,130,246,0.5) 0%, rgba(14,165,233,0.2) 50%, transparent 80%)',
-              transform: 'translateZ(-20px)',
             }}
             aria-hidden="true"
           />
@@ -527,7 +474,7 @@ export default function Login() {
               </div>
             </div>
           </div>
-        </TiltCard>
+        </div>
       </div>
     </div>
   );
