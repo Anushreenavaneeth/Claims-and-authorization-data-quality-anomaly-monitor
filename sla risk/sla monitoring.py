@@ -1,2075 +1,1123 @@
 import json
-import os
-import statistics
-from datetime import datetime
+from pathlib import Path
+from collections import Counter
 
 
 # ============================================================
 # CONFIGURATION
 # ============================================================
 
-# Get the folder where this Python file is located
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+BASE_DIR = Path(__file__).resolve().parent
 
+JSON_DIR = BASE_DIR / "json files"
 
-# Input JSON paths
-CLAIMS_JSON_PATH = os.path.join(
-    BASE_DIR,
-    "json files",
-    "claims.json"
-)
+DEFAULT_INPUT_FILES = {
+    "authorization": JSON_DIR / "authorization.json",
+    "claims": JSON_DIR / "claims.json",
+    "pharmacy": JSON_DIR / "pharmacy.json"
+}
 
-AUTHORIZATION_JSON_PATH = os.path.join(
-    BASE_DIR,
-    "json files",
-    "authorization.json"
-)
-
-
-# Output JSON path
-OUTPUT_PATH = os.path.join(
-    BASE_DIR,
-    "sla_monitoring_output.json"
-)
+DEFAULT_OUTPUT_FILE = BASE_DIR / "sla_monitoring_output.json"
 
 
 # ============================================================
-# SLA CONFIGURATION
+# SEVERITY WEIGHTS
 # ============================================================
 
-SLA_CONFIG = {
-
-    "claims": {
-        "sla_hours": 24,
-
-        # Used only when actual total pipeline records are available
-        "anomaly_rate_warning": 0.10,
-        "anomaly_rate_high": 0.20
-    },
-
-    "authorization": {
-        "sla_hours": 48,
-
-        # Used only when actual total pipeline records are available
-        "anomaly_rate_warning": 0.10,
-        "anomaly_rate_high": 0.20
-    },
-
-    "pharmacy": {
-        "sla_hours": 24,
-        "anomaly_rate_warning": 0.10,
-        "anomaly_rate_high": 0.20
-    }
+SEVERITY_WEIGHTS = {
+    "NONE": 0,
+    "LOW": 1,
+    "MEDIUM": 2,
+    "HIGH": 3,
+    "CRITICAL": 4
 }
 
 
 # ============================================================
-# LOAD JSON
+# LOAD JSON FILE
 # ============================================================
 
-def load_json(path):
+def load_json(file_path):
+    """
+    Loads a JSON file and returns its contents.
+    """
 
-    if not os.path.exists(path):
+    file_path = Path(file_path)
 
-        print(f"\nWARNING: File not found -> {path}")
-        return None
+    if not file_path.exists():
+        raise FileNotFoundError(
+            f"Input file not found: {file_path}"
+        )
+
+    with open(file_path, "r", encoding="utf-8") as file:
+        data = json.load(file)
+
+    return data
+
+
+# ============================================================
+# VALIDATE INPUT STRUCTURE
+# ============================================================
+
+def validate_json_structure(data, file_path):
+    """
+    Checks whether the input JSON has a records list.
+    """
+
+    if not isinstance(data, dict):
+        raise ValueError(
+            f"Invalid JSON structure in {file_path}. "
+            f"Expected a JSON object."
+        )
+
+    if "records" not in data:
+        raise ValueError(
+            f"'records' field missing in {file_path}"
+        )
+
+    if not isinstance(data["records"], list):
+        raise ValueError(
+            f"'records' must be a list in {file_path}"
+        )
+
+
+# ============================================================
+# HELPER FUNCTIONS
+# ============================================================
+
+def get_anomaly(record):
+    """
+    Returns whether the record is detected as anomalous.
+    """
+
+    final_assessment = record.get("final_assessment", {})
+
+    return bool(
+        final_assessment.get("anomaly", False)
+    )
+
+
+def get_severity(record):
+    """
+    Returns normalized severity.
+    """
+
+    final_assessment = record.get("final_assessment", {})
+
+    severity = final_assessment.get(
+        "severity",
+        "NONE"
+    )
+
+    if severity is None:
+        return "NONE"
+
+    severity = str(severity).strip().upper()
+
+    if severity not in SEVERITY_WEIGHTS:
+        return "NONE"
+
+    return severity
+
+
+def get_signal_count(record):
+    """
+    Returns the number of anomaly signals.
+    """
+
+    final_assessment = record.get("final_assessment", {})
+
+    value = final_assessment.get(
+        "signal_count",
+        0
+    )
 
     try:
-
-        with open(path, "r", encoding="utf-8") as file:
-
-            data = json.load(file)
-
-        print(f"\nSuccessfully loaded -> {path}")
-
-        return data
-
-    except Exception as error:
-
-        print(f"\nERROR loading JSON -> {path}")
-        print(error)
-
-        return None
-
-
-# ============================================================
-# SAFE FLOAT CONVERSION
-# ============================================================
-
-def to_float(value):
-
-    if value is None:
-        return None
-
-    try:
-        return float(value)
+        return max(0, int(value))
 
     except (ValueError, TypeError):
-        return None
+        return 0
 
 
-# ============================================================
-# SAFE INTEGER CONVERSION
-# ============================================================
+def get_signal_names(record):
+    """
+    Converts signals into a clean list.
+    """
 
-def to_int(value):
+    final_assessment = record.get("final_assessment", {})
 
-    if value is None:
-        return None
+    signals = final_assessment.get(
+        "signals",
+        "None"
+    )
 
-    try:
-        return int(float(value))
-
-    except (ValueError, TypeError):
-        return None
-
-
-# ============================================================
-# SAFE BOOLEAN CHECK
-# ============================================================
-
-def is_true(value):
-
-    if value is True:
-        return True
-
-    if isinstance(value, str):
-
-        return value.strip().lower() in [
-            "true",
-            "yes",
-            "1"
-        ]
-
-    if isinstance(value, (int, float)):
-        return value == 1
-
-    return False
-
-
-# ============================================================
-# CHECK IF DICTIONARY LOOKS LIKE A RECORD
-# ============================================================
-
-def looks_like_record(item):
-
-    if not isinstance(item, dict):
-        return False
-
-    possible_record_keys = {
-
-        # Claims
-        "record",
-        "anomaly",
-        "detection",
-        "claim_id",
-
-        # Authorization
-        "dataset_type",
-        "record_id",
-        "detection_summary",
-        "rule_based_evidence",
-        "ml_based_evidence",
-        "record_context"
-    }
-
-    return len(
-        possible_record_keys.intersection(item.keys())
-    ) > 0
-
-
-# ============================================================
-# FIND RECORD LIST
-#
-# Supports:
-#
-# {
-#     "anomalies": [...]
-# }
-#
-# {
-#     "records": [...]
-# }
-#
-# {
-#     "data": [...]
-# }
-#
-# [...]
-# ============================================================
-
-def find_record_list(data):
-
-    # --------------------------------------------------------
-    # CASE 1: ROOT IS A LIST
-    # --------------------------------------------------------
-
-    if isinstance(data, list):
-
-        if len(data) == 0:
-            return []
-
-        if (
-            isinstance(data[0], dict)
-            and looks_like_record(data[0])
-        ):
-            return data
-
-        for item in data:
-
-            result = find_record_list(item)
-
-            if result:
-                return result
-
+    if signals is None:
         return []
 
-
-    # --------------------------------------------------------
-    # CASE 2: ROOT IS A DICTIONARY
-    # --------------------------------------------------------
-
-    if isinstance(data, dict):
-
-        possible_list_keys = [
-
-            "anomalies",
-            "results",
-            "records",
-            "data",
-            "output",
-            "items",
-            "anomaly_results",
-            "claims_results",
-            "authorization_results",
-            "claims_output",
-            "authorization_output"
+    if isinstance(signals, list):
+        return [
+            str(signal).strip()
+            for signal in signals
+            if str(signal).strip()
         ]
 
+    signals = str(signals).strip()
 
-        # Check common keys first
-        for key in possible_list_keys:
+    if not signals or signals.lower() == "none":
+        return []
 
-            if key in data:
-
-                value = data[key]
-
-                if (
-                    isinstance(value, list)
-                    and len(value) > 0
-                    and isinstance(value[0], dict)
-                    and looks_like_record(value[0])
-                ):
-
-                    print(
-                        f"Records found under key: {key}"
-                    )
-
-                    return value
-
-
-        # Search all dictionary values
-        for key, value in data.items():
-
-            if (
-                isinstance(value, list)
-                and len(value) > 0
-                and isinstance(value[0], dict)
-                and looks_like_record(value[0])
-            ):
-
-                print(
-                    f"Records found under key: {key}"
-                )
-
-                return value
-
-
-        # Dictionary itself may be one record
-        if looks_like_record(data):
-
-            return [data]
-
-
-        # Recursive search
-        for value in data.values():
-
-            if isinstance(value, (dict, list)):
-
-                result = find_record_list(value)
-
-                if result:
-                    return result
-
-
-    return []
-
-
-# ============================================================
-# FIND TOTAL ORIGINAL PIPELINE RECORD COUNT
-#
-# This is important because the JSON may contain ONLY anomalies.
-#
-# Example:
-#
-# total_input_records = 10000
-# anomaly_records = 408
-#
-# actual anomaly rate = 408 / 10000 = 4.08%
-#
-# If total original count is not available:
-#
-# pipeline_anomaly_rate = None
-# ============================================================
-
-def find_total_pipeline_records(data):
-
-    possible_total_keys = [
-
-        "total_input_records",
-        "total_records",
-        "total_record_count",
-        "input_record_count",
-        "original_record_count",
-        "source_record_count",
-        "pipeline_record_count",
-        "records_processed",
-        "total_processed_records"
+    return [
+        signal.strip()
+        for signal in signals.split(",")
+        if signal.strip()
     ]
 
 
-    def recursive_search(obj):
+def get_record_id(record):
+    """
+    Dynamically extracts the primary ID from different datasets.
+    """
 
-        if isinstance(obj, dict):
+    record_id = record.get("record_id", {})
 
-            # Search direct keys
-            for key in possible_total_keys:
+    if not isinstance(record_id, dict):
+        return "UNKNOWN"
 
-                if key in obj:
+    preferred_keys = [
+        "authorization_id",
+        "claim_id",
+        "pharmacy_id",
+        "plan_id",
+        "member_id",
+        "id"
+    ]
 
-                    value = to_int(obj[key])
+    for key in preferred_keys:
+        value = record_id.get(key)
 
-                    if value is not None and value > 0:
+        if value not in [None, ""]:
+            return str(value)
 
-                        return value
+    # Fallback: first non-empty ID
+    for value in record_id.values():
+        if value not in [None, ""]:
+            return str(value)
 
-
-            # Search metadata-like sections first
-            metadata_keys = [
-
-                "metadata",
-                "metrics",
-                "summary",
-                "pipeline_metrics",
-                "processing_summary",
-                "dataset_summary",
-                "run_summary"
-            ]
-
-            for key in metadata_keys:
-
-                if key in obj:
-
-                    result = recursive_search(obj[key])
-
-                    if result is not None:
-                        return result
-
-
-            # Search remaining nested values
-            for value in obj.values():
-
-                if isinstance(value, (dict, list)):
-
-                    result = recursive_search(value)
-
-                    if result is not None:
-                        return result
-
-
-        elif isinstance(obj, list):
-
-            for item in obj:
-
-                if isinstance(item, (dict, list)):
-
-                    result = recursive_search(item)
-
-                    if result is not None:
-                        return result
-
-
-        return None
-
-
-    return recursive_search(data)
+    return "UNKNOWN"
 
 
 # ============================================================
-# DETECT SOURCE TYPE
+# SLA COMPONENT 1 - ANOMALY WORKLOAD
 # ============================================================
 
-def detect_source(records):
+def calculate_anomaly_workload(records):
+    """
+    Calculates the percentage of anomalous records.
+    """
+
+    total_records = len(records)
+
+    if total_records == 0:
+        return 0.0
+
+    anomalous_records = sum(
+        1
+        for record in records
+        if get_anomaly(record)
+    )
+
+    score = (
+        anomalous_records / total_records
+    ) * 100
+
+    return round(score, 2)
+
+
+# ============================================================
+# SLA COMPONENT 2 - SEVERITY BURDEN
+# ============================================================
+
+def calculate_severity_burden(records):
+    """
+    Calculates severity burden.
+
+    NONE      = 0
+    LOW       = 1
+    MEDIUM    = 2
+    HIGH      = 3
+    CRITICAL  = 4
+    """
 
     if not records:
-        return "unknown"
+        return 0.0
 
-    first = records[0]
+    total_weight = 0
 
-    if not isinstance(first, dict):
-        return "unknown"
+    for record in records:
+        severity = get_severity(record)
 
+        total_weight += SEVERITY_WEIGHTS.get(
+            severity,
+            0
+        )
 
-    keys = set(first.keys())
+    maximum_possible_weight = len(records) * 4
 
+    if maximum_possible_weight == 0:
+        return 0.0
 
-    # --------------------------------------------------------
-    # AUTHORIZATION
-    # --------------------------------------------------------
+    score = (
+        total_weight / maximum_possible_weight
+    ) * 100
 
-    dataset_type = str(
-        first.get("dataset_type", "")
-    ).lower()
-
-    if "author" in dataset_type:
-        return "authorization"
-
-
-    authorization_keys = {
-
-        "detection_summary",
-        "rule_based_evidence",
-        "ml_based_evidence",
-        "record_context",
-        "sla"
-    }
-
-    if len(
-        keys.intersection(authorization_keys)
-    ) > 0:
-
-        return "authorization"
-
-
-    # --------------------------------------------------------
-    # CLAIMS
-    # --------------------------------------------------------
-
-    claims_keys = {
-
-        "record",
-        "anomaly",
-        "detection"
-    }
-
-    if len(
-        keys.intersection(claims_keys)
-    ) >= 2:
-
-        return "claims"
-
-
-    if "claim_id" in keys:
-        return "claims"
-
-
-    return "unknown"
+    return round(score, 2)
 
 
 # ============================================================
-# PROCESS CLAIMS RECORDS
+# SLA COMPONENT 3 - SIGNAL BURDEN
 # ============================================================
 
-def process_claims(records):
+def calculate_signal_burden(records):
+    """
+    Calculates anomaly signal burden.
 
-    anomaly_records_received = len(records)
+    Signal contribution is capped at 3 signals.
+    """
 
-    rule_anomalies = 0
-    ml_anomalies = 0
+    if not records:
+        return 0.0
 
-    ml_scores = []
+    total_signal_score = 0
 
+    for record in records:
+        signal_count = get_signal_count(record)
 
-    for item in records:
-
-        # ----------------------------------------------------
-        # DETECTION
-        # ----------------------------------------------------
-
-        detection = item.get(
-            "detection",
-            {}
+        total_signal_score += min(
+            signal_count,
+            3
         )
 
-        if not isinstance(detection, dict):
-            detection = {}
+    maximum_possible_score = len(records) * 3
 
+    if maximum_possible_score == 0:
+        return 0.0
 
-        # ----------------------------------------------------
-        # RULE BASED
-        # ----------------------------------------------------
+    score = (
+        total_signal_score / maximum_possible_score
+    ) * 100
 
-        rule_data = detection.get(
-            "rule_based",
-            {}
-        )
-
-        if isinstance(rule_data, dict):
-
-            if is_true(
-                rule_data.get(
-                    "detected",
-                    rule_data.get(
-                        "anomaly_detected",
-                        False
-                    )
-                )
-            ):
-
-                rule_anomalies += 1
-
-
-        # ----------------------------------------------------
-        # MACHINE LEARNING
-        # ----------------------------------------------------
-
-        ml_data = detection.get(
-            "machine_learning",
-            {}
-        )
-
-        if isinstance(ml_data, dict):
-
-            if is_true(
-                ml_data.get(
-                    "detected",
-                    ml_data.get(
-                        "anomaly_detected",
-                        False
-                    )
-                )
-            ):
-
-                ml_anomalies += 1
-
-
-            score = to_float(
-
-                ml_data.get(
-                    "anomaly_score",
-                    ml_data.get(
-                        "score",
-                        ml_data.get(
-                            "risk_score"
-                        )
-                    )
-                )
-            )
-
-
-            if score is not None:
-
-                # Isolation Forest scores can be negative
-                ml_scores.append(abs(score))
-
-
-    # --------------------------------------------------------
-    # AVERAGE ML SCORE
-    # --------------------------------------------------------
-
-    average_risk_score = (
-
-        sum(ml_scores) / len(ml_scores)
-
-        if ml_scores
-
-        else 0
-    )
-
-
-    return {
-
-        "anomaly_records_received":
-            anomaly_records_received,
-
-        "rule_anomalies":
-            rule_anomalies,
-
-        "ml_anomalies":
-            ml_anomalies,
-
-        "average_risk_score":
-            average_risk_score,
-
-        # Claims JSON currently has no processing times
-        "processing_times": []
-    }
+    return round(score, 2)
 
 
 # ============================================================
-# PROCESS AUTHORIZATION RECORDS
+# DATASET SLA RISK SCORE
 # ============================================================
 
-def process_authorization(records):
-
-    anomaly_records_received = len(records)
-
-    rule_anomalies = 0
-    ml_anomalies = 0
-
-    risk_scores = []
-    processing_times = []
-
-
-    for item in records:
-
-        # ----------------------------------------------------
-        # DETECTION SUMMARY
-        # ----------------------------------------------------
-
-        detection = item.get(
-            "detection_summary",
-            {}
-        )
-
-        if not isinstance(detection, dict):
-            detection = {}
-
-
-        # ----------------------------------------------------
-        # RULE ANOMALY
-        # ----------------------------------------------------
-
-        if is_true(
-
-            detection.get(
-                "rule_anomaly",
-                item.get(
-                    "rule_anomaly",
-                    False
-                )
-            )
-        ):
-
-            rule_anomalies += 1
-
-
-        # ----------------------------------------------------
-        # ML ANOMALY
-        # ----------------------------------------------------
-
-        if is_true(
-
-            detection.get(
-                "ml_anomaly",
-                item.get(
-                    "ml_anomaly",
-                    False
-                )
-            )
-        ):
-
-            ml_anomalies += 1
-
-
-        # ----------------------------------------------------
-        # RISK SCORE
-        # ----------------------------------------------------
-
-        risk_score = to_float(
-
-            detection.get(
-                "final_risk_score"
-            )
-        )
-
-
-        if risk_score is None:
-
-            risk_score = to_float(
-
-                item.get(
-                    "final_risk_score"
-                )
-            )
-
-
-        if risk_score is not None:
-
-            risk_scores.append(risk_score)
-
-
-        # ----------------------------------------------------
-        # PROCESSING TIME
-        # ----------------------------------------------------
-
-        context = item.get(
-            "record_context",
-            {}
-        )
-
-        if not isinstance(context, dict):
-            context = {}
-
-
-        processing_time = to_float(
-
-            context.get(
-                "processing_time_hours"
-            )
-        )
-
-
-        if processing_time is None:
-
-            processing_time = to_float(
-
-                item.get(
-                    "processing_time_hours"
-                )
-            )
-
-
-        if processing_time is not None:
-
-            processing_times.append(
-                processing_time
-            )
-
-
-    # --------------------------------------------------------
-    # AVERAGE RISK SCORE
-    # --------------------------------------------------------
-
-    average_risk_score = (
-
-        sum(risk_scores) / len(risk_scores)
-
-        if risk_scores
-
-        else 0
-    )
-
-
-    return {
-
-        "anomaly_records_received":
-            anomaly_records_received,
-
-        "rule_anomalies":
-            rule_anomalies,
-
-        "ml_anomalies":
-            ml_anomalies,
-
-        "average_risk_score":
-            average_risk_score,
-
-        "processing_times":
-            processing_times
-    }
-
-
-# ============================================================
-# CALCULATE ACTUAL PIPELINE ANOMALY RATE
-#
-# Only calculated when total original pipeline count is known.
-# ============================================================
-
-def calculate_anomaly_rate(
-    anomaly_records_received,
-    total_pipeline_records
+def calculate_dataset_sla_risk(
+    anomaly_workload,
+    severity_burden,
+    signal_burden
 ):
+    """
+    Final Dataset SLA Risk Score.
 
-    if (
-        total_pipeline_records is None
-        or total_pipeline_records <= 0
-    ):
+    Weighting:
+        50% Anomaly Workload
+        30% Severity Burden
+        20% Signal Burden
+    """
 
+    score = (
+        0.50 * anomaly_workload
+        + 0.30 * severity_burden
+        + 0.20 * signal_burden
+    )
+
+    score = max(0, min(score, 100))
+
+    return round(score, 2)
+
+
+# ============================================================
+# RISK LEVEL
+# ============================================================
+
+def get_risk_level(score):
+    """
+    Converts SLA score into a risk category.
+    """
+
+    if score <= 30:
+        return "LOW"
+
+    elif score <= 60:
+        return "MEDIUM"
+
+    elif score <= 80:
+        return "HIGH"
+
+    else:
+        return "CRITICAL"
+
+
+# ============================================================
+# RECORD LEVEL SLA RISK
+# ============================================================
+
+def calculate_record_sla_risk(record):
+    """
+    Calculates SLA exposure for an individual record.
+
+    Weighting:
+        50% Anomaly existence
+        30% Severity
+        20% Signal count
+    """
+
+    anomaly = get_anomaly(record)
+
+    severity = get_severity(record)
+
+    signal_count = get_signal_count(record)
+
+    # No anomaly means no current SLA exposure
+    if not anomaly:
         return {
-
-            "available": False,
-
-            "rate": None
+            "risk_score": 0.0,
+            "risk_level": "LOW"
         }
 
+    # --------------------------------------------------------
+    # 1. ANOMALY CONTRIBUTION
+    # --------------------------------------------------------
 
-    rate = (
-        anomaly_records_received
-        / total_pipeline_records
+    anomaly_score = 100
+
+    # --------------------------------------------------------
+    # 2. SEVERITY CONTRIBUTION
+    # --------------------------------------------------------
+
+    severity_weight = SEVERITY_WEIGHTS.get(
+        severity,
+        0
     )
 
+    severity_score = (
+        severity_weight / 4
+    ) * 100
+
+    # --------------------------------------------------------
+    # 3. SIGNAL CONTRIBUTION
+    # --------------------------------------------------------
+
+    signal_score = (
+        min(signal_count, 3) / 3
+    ) * 100
+
+    # --------------------------------------------------------
+    # FINAL RECORD SCORE
+    # --------------------------------------------------------
+
+    score = (
+        0.50 * anomaly_score
+        + 0.30 * severity_score
+        + 0.20 * signal_score
+    )
+
+    score = max(0, min(score, 100))
+
+    score = round(score, 2)
 
     return {
-
-        "available": True,
-
-        "rate": rate
+        "risk_score": score,
+        "risk_level": get_risk_level(score)
     }
 
 
 # ============================================================
-# PROCESSING TIME ANALYSIS
+# SLA RECOMMENDATION ENGINE
 # ============================================================
 
-def analyze_processing_times(
-    processing_times,
-    sla_hours
-):
+def get_sla_recommendation(risk_level):
+    """
+    Gives an OPERATIONAL recommendation.
 
-    # --------------------------------------------------------
-    # NO PROCESSING TIME DATA
-    # --------------------------------------------------------
+    It does NOT explain how to fix the anomaly.
+    Detailed anomaly explanation/fix can be handled by RAG.
+    """
 
-    if not processing_times:
+    recommendations = {
 
-        return {
+        "LOW": {
+            "action": "Continue Normal Monitoring",
 
-            "available": False,
+            "recommendation": (
+                "Continue standard processing and routine monitoring. "
+                "No immediate SLA intervention is currently required."
+            )
+        },
 
-            "average_hours": None,
+        "MEDIUM": {
+            "action": "Prioritized Review",
 
-            "median_hours": None,
+            "recommendation": (
+                "Review the affected workload within the defined "
+                "processing window and prioritize unresolved anomalies "
+                "before they accumulate into a processing backlog."
+            )
+        },
 
-            "max_hours": None,
+        "HIGH": {
+            "action": "Immediate Prioritization",
 
-            "sla_hours": sla_hours,
+            "recommendation": (
+                "Prioritize the affected records for resolution and "
+                "assign them to the appropriate operations queue to "
+                "reduce the risk of processing delays and potential "
+                "SLA breach."
+            )
+        },
 
-            "records_over_sla": 0,
+        "CRITICAL": {
+            "action": "Escalation Required",
 
-            "over_sla_rate": None,
-
-            "processing_anomaly": False
+            "recommendation": (
+                "Immediately escalate the affected workload, prioritize "
+                "critical anomalies, and allocate additional operational "
+                "resources to prevent an SLA breach."
+            )
         }
+    }
 
+    return recommendations.get(
+        risk_level,
+        recommendations["LOW"]
+    )
+
+
+# ============================================================
+# CREATE RECORD LEVEL OUTPUT
+# ============================================================
+
+def create_record_sla_output(record):
+    """
+    Creates SLA output for one record.
+    """
+
+    record_id = get_record_id(record)
+
+    anomaly = get_anomaly(record)
+
+    severity = get_severity(record)
+
+    signal_count = get_signal_count(record)
+
+    signals = get_signal_names(record)
+
+    # Calculate record SLA risk
+    sla_result = calculate_record_sla_risk(record)
+
+    risk_score = sla_result["risk_score"]
+    risk_level = sla_result["risk_level"]
+
+    # SLA recommendation
+    sla_recommendation = get_sla_recommendation(
+        risk_level
+    )
+
+    return {
+
+        "record_id": record_id,
+
+        "anomaly_detected": anomaly,
+
+        "anomaly_severity": severity,
+
+        "signal_count": signal_count,
+
+        "signals": signals,
+
+        "sla_risk": {
+
+            "risk_score": risk_score,
+
+            "risk_level": risk_level
+        },
+
+        "sla_recommendation": {
+
+            "action": sla_recommendation["action"],
+
+            "recommendation": (
+                sla_recommendation["recommendation"]
+            )
+        }
+    }
+
+
+# ============================================================
+# PROCESS ONE DATASET
+# ============================================================
+
+def process_dataset(dataset_name, file_path):
+    """
+    Processes one input JSON dataset.
+    """
+
+    # Load JSON
+    data = load_json(file_path)
+
+    # Validate structure
+    validate_json_structure(
+        data,
+        file_path
+    )
+
+    records = data["records"]
+
+    total_records = len(records)
 
     # --------------------------------------------------------
-    # BASIC METRICS
+    # ANOMALY SUMMARY
     # --------------------------------------------------------
 
-    average_hours = (
-
-        sum(processing_times)
-        / len(processing_times)
-    )
-
-
-    median_hours = statistics.median(
-        processing_times
-    )
-
-
-    max_hours = max(
-        processing_times
-    )
-
-
-    records_over_sla = sum(
-
+    anomalous_records = sum(
         1
-
-        for value in processing_times
-
-        if value > sla_hours
+        for record in records
+        if get_anomaly(record)
     )
 
-
-    over_sla_rate = (
-
-        records_over_sla
-        / len(processing_times)
+    normal_records = (
+        total_records - anomalous_records
     )
 
+    if total_records > 0:
+
+        anomaly_rate = (
+            anomalous_records / total_records
+        ) * 100
+
+    else:
+        anomaly_rate = 0.0
+
+    anomaly_rate = round(
+        anomaly_rate,
+        2
+    )
 
     # --------------------------------------------------------
-    # UNUSUAL PROCESSING TIME DETECTION
+    # SEVERITY DISTRIBUTION
     # --------------------------------------------------------
 
-    processing_anomaly = False
+    severity_distribution = Counter(
+        get_severity(record)
+        for record in records
+    )
+
+    # --------------------------------------------------------
+    # SIGNAL DISTRIBUTION
+    # --------------------------------------------------------
+
+    signal_distribution = Counter(
+        get_signal_count(record)
+        for record in records
+    )
+
+    # --------------------------------------------------------
+    # SLA COMPONENTS
+    # --------------------------------------------------------
+
+    anomaly_workload = calculate_anomaly_workload(
+        records
+    )
+
+    severity_burden = calculate_severity_burden(
+        records
+    )
+
+    signal_burden = calculate_signal_burden(
+        records
+    )
+
+    # --------------------------------------------------------
+    # DATASET SLA RISK
+    # --------------------------------------------------------
+
+    sla_score = calculate_dataset_sla_risk(
+        anomaly_workload,
+        severity_burden,
+        signal_burden
+    )
+
+    risk_level = get_risk_level(
+        sla_score
+    )
+
+    # --------------------------------------------------------
+    # SLA RECOMMENDATION
+    # --------------------------------------------------------
+
+    sla_recommendation = get_sla_recommendation(
+        risk_level
+    )
+
+    # --------------------------------------------------------
+    # RECORD RESULTS
+    # --------------------------------------------------------
+
+    record_results = []
+
+    for record in records:
+
+        result = create_record_sla_output(
+            record
+        )
+
+        record_results.append(result)
+
+    # --------------------------------------------------------
+    # FINAL DATASET RESULT
+    # --------------------------------------------------------
+
+    return {
+
+        "dataset": dataset_name,
+
+        "source_file": str(file_path),
+
+        "record_count": total_records,
+
+        "anomaly_summary": {
+
+            "anomalous_records": anomalous_records,
+
+            "normal_records": normal_records,
+
+            "anomaly_rate": anomaly_rate
+        },
+
+        "severity_distribution": dict(
+            severity_distribution
+        ),
+
+        "signal_distribution": {
+
+            str(key): value
+
+            for key, value
+            in sorted(signal_distribution.items())
+        },
+
+        "sla_metrics": {
+
+            "anomaly_workload_score": anomaly_workload,
+
+            "severity_burden_score": severity_burden,
+
+            "signal_burden_score": signal_burden
+        },
+
+        "sla_risk": {
+
+            "risk_score": sla_score,
+
+            "risk_level": risk_level
+        },
+
+        "sla_recommendation": {
+
+            "action": sla_recommendation["action"],
+
+            "recommendation": (
+                sla_recommendation["recommendation"]
+            )
+        },
+
+        "record_results": record_results
+    }
 
 
-    if len(processing_times) >= 5:
+# ============================================================
+# MAIN SLA MONITORING FUNCTION
+# ============================================================
+
+def run_sla_monitoring(
+    authorization_path=None,
+    claims_path=None,
+    pharmacy_path=None,
+    output_path=None
+):
+    """
+    Main reusable SLA Monitoring function.
+
+    CURRENT USAGE:
+        Uses local JSON files automatically.
+
+    FUTURE INTEGRATION:
+        Backend can pass paths directly:
+
+        run_sla_monitoring(
+            authorization_path="path/to/file.json",
+            claims_path="path/to/file.json",
+            pharmacy_path="path/to/file.json"
+        )
+
+    The number of records can change dynamically.
+    """
+
+    # --------------------------------------------------------
+    # DEFAULT INPUT PATHS
+    # --------------------------------------------------------
+
+    if authorization_path is None:
+        authorization_path = DEFAULT_INPUT_FILES[
+            "authorization"
+        ]
+
+    if claims_path is None:
+        claims_path = DEFAULT_INPUT_FILES[
+            "claims"
+        ]
+
+    if pharmacy_path is None:
+        pharmacy_path = DEFAULT_INPUT_FILES[
+            "pharmacy"
+        ]
+
+    if output_path is None:
+        output_path = DEFAULT_OUTPUT_FILE
+
+    # --------------------------------------------------------
+    # INPUT DATASETS
+    # --------------------------------------------------------
+
+    input_files = {
+
+        "authorization": authorization_path,
+
+        "claims": claims_path,
+
+        "pharmacy": pharmacy_path
+    }
+
+    results = []
+
+    # ========================================================
+    # PROCESS EACH DATASET
+    # ========================================================
+
+    for dataset_name, file_path in input_files.items():
+
+        if file_path is None:
+            continue
 
         try:
 
-            standard_deviation = statistics.stdev(
-                processing_times
+            print(
+                f"\nProcessing "
+                f"{dataset_name.upper()}..."
             )
 
-
-            threshold = (
-
-                median_hours
-                + (2 * standard_deviation)
+            result = process_dataset(
+                dataset_name,
+                file_path
             )
 
+            results.append(result)
 
-            if max_hours > threshold:
-
-                processing_anomaly = True
-
-
-        except statistics.StatisticsError:
-
-            processing_anomaly = False
-
-
-    # Any record exceeding SLA indicates SLA processing risk
-    if records_over_sla > 0:
-
-        processing_anomaly = True
-
-
-    return {
-
-        "available": True,
-
-        "average_hours":
-            round(average_hours, 2),
-
-        "median_hours":
-            round(median_hours, 2),
-
-        "max_hours":
-            round(max_hours, 2),
-
-        "sla_hours":
-            sla_hours,
-
-        "records_over_sla":
-            records_over_sla,
-
-        "over_sla_rate":
-            round(over_sla_rate, 4),
-
-        "processing_anomaly":
-            processing_anomaly
-    }
-
-
-# ============================================================
-# CALCULATE DATA QUALITY RISK
-#
-# Uses:
-# - Actual anomaly rate when available
-# - Otherwise anomaly workload and ML/rule findings
-# - Average anomaly risk score
-# ============================================================
-
-def calculate_data_quality_risk(
-    source,
-    anomaly_records_received,
-    rule_anomalies,
-    ml_anomalies,
-    anomaly_rate_result,
-    average_risk_score
-):
-
-    config = SLA_CONFIG[source]
-
-    risk_points = 0
-    reasons = []
-
-
-    # --------------------------------------------------------
-    # ACTUAL ANOMALY RATE
-    # --------------------------------------------------------
-
-    if anomaly_rate_result["available"]:
-
-        anomaly_rate = anomaly_rate_result["rate"]
-
-
-        if anomaly_rate >= config["anomaly_rate_high"]:
-
-            risk_points += 3
-
-            reasons.append(
-                f"High pipeline anomaly rate: "
-                f"{anomaly_rate:.2%}"
+            print(
+                f"Records        : "
+                f"{result['record_count']}"
             )
 
-
-        elif anomaly_rate >= config["anomaly_rate_warning"]:
-
-            risk_points += 2
-
-            reasons.append(
-                f"Elevated pipeline anomaly rate: "
-                f"{anomaly_rate:.2%}"
+            print(
+                f"Anomalies      : "
+                f"{result['anomaly_summary']['anomalous_records']}"
             )
 
+            print(
+                f"Anomaly Rate   : "
+                f"{result['anomaly_summary']['anomaly_rate']}%"
+            )
+
+            print(
+                f"SLA Score      : "
+                f"{result['sla_risk']['risk_score']}"
+            )
+
+            print(
+                f"SLA Risk Level : "
+                f"{result['sla_risk']['risk_level']}"
+            )
+
+            print(
+                f"Action         : "
+                f"{result['sla_recommendation']['action']}"
+            )
+
+        except Exception as error:
+
+            print(
+                f"\nERROR processing "
+                f"{dataset_name.upper()}: {error}"
+            )
+
+    # ========================================================
+    # OVERALL SUMMARY
+    # ========================================================
+
+    total_records = sum(
+        result["record_count"]
+        for result in results
+    )
+
+    total_anomalies = sum(
+        result["anomaly_summary"][
+            "anomalous_records"
+        ]
+        for result in results
+    )
 
     # --------------------------------------------------------
-    # ANOMALY RATE NOT AVAILABLE
+    # OVERALL ANOMALY RATE
     # --------------------------------------------------------
+
+    if total_records > 0:
+
+        overall_anomaly_rate = (
+            total_anomalies / total_records
+        ) * 100
 
     else:
+        overall_anomaly_rate = 0.0
 
-        reasons.append(
-            "Actual pipeline anomaly rate is unavailable because "
-            "the input JSON contains anomaly output records and "
-            "does not provide the total original pipeline record count."
+    overall_anomaly_rate = round(
+        overall_anomaly_rate,
+        2
+    )
+
+    # --------------------------------------------------------
+    # WEIGHTED OVERALL SLA SCORE
+    # --------------------------------------------------------
+
+    if total_records > 0:
+
+        weighted_sla_total = sum(
+
+            result["sla_risk"]["risk_score"]
+            *
+            result["record_count"]
+
+            for result in results
+
         )
 
-
-        # Large anomaly workload
-        if anomaly_records_received >= 1000:
-
-            risk_points += 3
-
-            reasons.append(
-                f"High anomaly workload: "
-                f"{anomaly_records_received} anomaly records received"
-            )
-
-
-        elif anomaly_records_received >= 500:
-
-            risk_points += 2
-
-            reasons.append(
-                f"Elevated anomaly workload: "
-                f"{anomaly_records_received} anomaly records received"
-            )
-
-
-        elif anomaly_records_received >= 100:
-
-            risk_points += 1
-
-            reasons.append(
-                f"Anomaly workload requires review: "
-                f"{anomaly_records_received} anomaly records received"
-            )
-
-
-    # --------------------------------------------------------
-    # ML ANOMALY PRESSURE
-    # --------------------------------------------------------
-
-    if ml_anomalies >= 500:
-
-        risk_points += 2
-
-        reasons.append(
-            f"High ML anomaly volume: "
-            f"{ml_anomalies} records"
+        overall_sla_score = (
+            weighted_sla_total / total_records
         )
-
-
-    elif ml_anomalies >= 100:
-
-        risk_points += 1
-
-        reasons.append(
-            f"Significant ML anomaly volume: "
-            f"{ml_anomalies} records"
-        )
-
-
-    # --------------------------------------------------------
-    # RULE ANOMALY PRESSURE
-    # --------------------------------------------------------
-
-    if rule_anomalies >= 500:
-
-        risk_points += 2
-
-        reasons.append(
-            f"High rule-based anomaly volume: "
-            f"{rule_anomalies} records"
-        )
-
-
-    elif rule_anomalies >= 100:
-
-        risk_points += 1
-
-        reasons.append(
-            f"Significant rule-based anomaly volume: "
-            f"{rule_anomalies} records"
-        )
-
-
-    # --------------------------------------------------------
-    # AVERAGE RISK SCORE
-    # --------------------------------------------------------
-
-    if average_risk_score >= 0.70:
-
-        risk_points += 2
-
-        reasons.append(
-            "High average anomaly/risk score"
-        )
-
-
-    elif average_risk_score >= 0.40:
-
-        risk_points += 1
-
-        reasons.append(
-            "Moderate average anomaly/risk score"
-        )
-
-
-    # --------------------------------------------------------
-    # FINAL DATA QUALITY RISK
-    # --------------------------------------------------------
-
-    if risk_points >= 6:
-
-        data_quality_risk = "HIGH"
-
-
-    elif risk_points >= 3:
-
-        data_quality_risk = "MEDIUM"
-
 
     else:
+        overall_sla_score = 0.0
 
-        data_quality_risk = "LOW"
-
-
-    return {
-
-        "data_quality_risk":
-            data_quality_risk,
-
-        "risk_points":
-            risk_points,
-
-        "risk_reasons":
-            reasons
-    }
-
-
-# ============================================================
-# CALCULATE SLA RISK
-#
-# Uses ONLY processing / SLA indicators.
-#
-# This prevents data anomaly count from being incorrectly
-# treated as an actual SLA breach.
-# ============================================================
-
-def calculate_sla_risk(
-    processing_analysis
-):
-
-    risk_points = 0
-    reasons = []
-
-
-    # --------------------------------------------------------
-    # PROCESSING DATA NOT AVAILABLE
-    # --------------------------------------------------------
-
-    if not processing_analysis["available"]:
-
-        return {
-
-            "sla_risk": "NOT_AVAILABLE",
-
-            "risk_points": 0,
-
-            "risk_reasons": [
-
-                "Processing-time data is not available, so actual "
-                "SLA risk cannot be calculated for this source."
-            ]
-        }
-
-
-    # --------------------------------------------------------
-    # RECORDS EXCEEDING SLA
-    # --------------------------------------------------------
-
-    records_over_sla = (
-        processing_analysis["records_over_sla"]
+    overall_sla_score = round(
+        max(
+            0,
+            min(overall_sla_score, 100)
+        ),
+        2
     )
 
-
-    over_sla_rate = (
-        processing_analysis["over_sla_rate"]
+    overall_risk_level = get_risk_level(
+        overall_sla_score
     )
 
-
-    if records_over_sla > 0:
-
-        if over_sla_rate >= 0.50:
-
-            risk_points += 4
-
-            reasons.append(
-                f"Severe SLA exposure: "
-                f"{over_sla_rate:.2%} of records exceeded "
-                f"the {processing_analysis['sla_hours']} hour SLA"
-            )
-
-
-        elif over_sla_rate >= 0.20:
-
-            risk_points += 3
-
-            reasons.append(
-                f"High SLA exposure: "
-                f"{over_sla_rate:.2%} of records exceeded "
-                f"the {processing_analysis['sla_hours']} hour SLA"
-            )
-
-
-        else:
-
-            risk_points += 2
-
-            reasons.append(
-                f"{records_over_sla} record(s) exceeded "
-                f"the {processing_analysis['sla_hours']} hour SLA"
-            )
-
-
-    # --------------------------------------------------------
-    # UNUSUAL PROCESSING PATTERN
-    # --------------------------------------------------------
-
-    if processing_analysis["processing_anomaly"]:
-
-        risk_points += 2
-
-        reasons.append(
-            "Unusual processing-time pattern detected"
+    overall_recommendation = (
+        get_sla_recommendation(
+            overall_risk_level
         )
-
-
-    # --------------------------------------------------------
-    # FINAL SLA RISK
-    # --------------------------------------------------------
-
-    if risk_points >= 5:
-
-        sla_risk = "HIGH"
-
-
-    elif risk_points >= 2:
-
-        sla_risk = "MEDIUM"
-
-
-    else:
-
-        sla_risk = "LOW"
-
-
-    return {
-
-        "sla_risk":
-            sla_risk,
-
-        "risk_points":
-            risk_points,
-
-        "risk_reasons":
-            reasons
-    }
-
-
-# ============================================================
-# CALCULATE OVERALL PIPELINE RISK
-# ============================================================
-
-def calculate_overall_risk(
-    data_quality_result,
-    sla_result
-):
-
-    points = (
-        data_quality_result["risk_points"]
-        + sla_result["risk_points"]
     )
 
+    # ========================================================
+    # DATASET RISK SUMMARY
+    # ========================================================
 
-    if points >= 9:
+    dataset_risk_summary = []
 
-        overall_risk = "HIGH"
+    for result in results:
 
+        dataset_risk_summary.append({
 
-    elif points >= 4:
+            "dataset":
+                result["dataset"],
 
-        overall_risk = "MEDIUM"
+            "record_count":
+                result["record_count"],
 
+            "anomaly_rate":
+                result["anomaly_summary"][
+                    "anomaly_rate"
+                ],
 
-    else:
+            "sla_risk_score":
+                result["sla_risk"][
+                    "risk_score"
+                ],
 
-        overall_risk = "LOW"
+            "sla_risk_level":
+                result["sla_risk"][
+                    "risk_level"
+                ],
 
+            "recommended_action":
+                result["sla_recommendation"][
+                    "action"
+                ]
+        })
 
-    return {
+    # ========================================================
+    # FINAL OUTPUT
+    # ========================================================
 
-        "overall_pipeline_risk":
-            overall_risk,
+    output = {
 
-        "combined_risk_points":
-            points
-    }
+        "project":
+            "Healthcare Data Operations Platform - SLA Risk Monitor",
 
+        "schema_version":
+            "1.0",
 
-# ============================================================
-# GENERATE RECOMMENDATIONS
-# ============================================================
+        "monitoring_type":
+            "Operational SLA Risk Exposure Monitoring",
 
-def generate_recommendations(
-    source,
-    anomaly_rate_result,
-    anomaly_records_received,
-    rule_anomalies,
-    ml_anomalies,
-    processing_analysis,
-    data_quality_result,
-    sla_result,
-    overall_result
-):
+        "datasets_processed":
+            len(results),
 
-    recommendations = []
+        "overall_summary": {
 
+            "total_records":
+                total_records,
 
-    # --------------------------------------------------------
-    # ANOMALY RATE UNAVAILABLE
-    # --------------------------------------------------------
+            "total_anomalous_records":
+                total_anomalies,
 
-    if not anomaly_rate_result["available"]:
-
-        recommendations.append(
-            "Provide the total original pipeline record count in "
-            "future pipeline outputs so the actual anomaly rate can "
-            "be calculated accurately."
-        )
-
-
-    # --------------------------------------------------------
-    # DATA QUALITY RISK
-    # --------------------------------------------------------
-
-    if data_quality_result["data_quality_risk"] == "HIGH":
-
-        recommendations.append(
-            "Prioritize investigation of the high anomaly workload "
-            "and identify common root causes in upstream data."
-        )
-
-
-    elif data_quality_result["data_quality_risk"] == "MEDIUM":
-
-        recommendations.append(
-            "Review the detected anomaly patterns and validate "
-            "recent changes in source data or pipeline processing."
-        )
-
-
-    # --------------------------------------------------------
-    # ML / RULE FINDINGS
-    # --------------------------------------------------------
-
-    if ml_anomalies > 0:
-
-        recommendations.append(
-            "Review ML-detected anomaly patterns to identify "
-            "previously unknown or unusual data behavior."
-        )
-
-
-    if rule_anomalies > 0:
-
-        recommendations.append(
-            "Review rule-based violations and correct recurring "
-            "data-quality issues at the upstream source."
-        )
-
-
-    # --------------------------------------------------------
-    # SLA RISK
-    # --------------------------------------------------------
-
-    if sla_result["sla_risk"] == "HIGH":
-
-        recommendations.append(
-            "Escalate the pipeline for immediate investigation "
-            "because a high proportion of records are at risk of "
-            "or have exceeded the configured SLA."
-        )
-
-
-    elif sla_result["sla_risk"] == "MEDIUM":
-
-        recommendations.append(
-            "Monitor processing delays closely and address "
-            "bottlenecks before additional SLA breaches occur."
-        )
-
-
-    elif sla_result["sla_risk"] == "NOT_AVAILABLE":
-
-        recommendations.append(
-            "Capture record or pipeline processing timestamps in "
-            "future outputs to enable SLA breach and delay analysis."
-        )
-
-
-    # --------------------------------------------------------
-    # OVERALL HIGH RISK
-    # --------------------------------------------------------
-
-    if overall_result["overall_pipeline_risk"] == "HIGH":
-
-        recommendations.append(
-            "Assign the issue for immediate administrative review "
-            "and track remediation until the affected data quality "
-            "and processing risks are resolved."
-        )
-
-
-    # --------------------------------------------------------
-    # DEFAULT
-    # --------------------------------------------------------
-
-    if not recommendations:
-
-        recommendations.append(
-            "Continue routine monitoring. No significant pipeline "
-            "risk indicators were detected."
-        )
-
-
-    # Remove duplicates
-    unique_recommendations = []
-
-
-    for recommendation in recommendations:
-
-        if recommendation not in unique_recommendations:
-
-            unique_recommendations.append(
-                recommendation
-            )
-
-
-    return unique_recommendations
-
-
-# ============================================================
-# ANALYZE ONE SOURCE
-# ============================================================
-
-def analyze_source(
-    source,
-    records,
-    original_json_data
-):
-
-    print("\n" + "=" * 60)
-    print(f"ANALYZING: {source.upper()}")
-    print("=" * 60)
-
-    print(
-        f"Anomaly records received: {len(records)}"
-    )
-
-
-    # --------------------------------------------------------
-    # PROCESS RECORDS
-    # --------------------------------------------------------
-
-    if source == "claims":
-
-        summary = process_claims(
-            records
-        )
-
-
-    elif source == "authorization":
-
-        summary = process_authorization(
-            records
-        )
-
-
-    else:
-
-        print(
-            "Unsupported source."
-        )
-
-        return None
-
-
-    # --------------------------------------------------------
-    # FIND TOTAL ORIGINAL PIPELINE RECORD COUNT
-    # --------------------------------------------------------
-
-    total_pipeline_records = find_total_pipeline_records(
-        original_json_data
-    )
-
-
-    if total_pipeline_records is not None:
-
-        print(
-            f"Total original pipeline records found: "
-            f"{total_pipeline_records}"
-        )
-
-
-    else:
-
-        print(
-            "Total original pipeline record count: "
-            "NOT AVAILABLE"
-        )
-
-
-    # --------------------------------------------------------
-    # ACTUAL ANOMALY RATE
-    # --------------------------------------------------------
-
-    anomaly_rate_result = calculate_anomaly_rate(
-
-        summary["anomaly_records_received"],
-
-        total_pipeline_records
-    )
-
-
-    # --------------------------------------------------------
-    # CONFIG
-    # --------------------------------------------------------
-
-    config = SLA_CONFIG[source]
-
-
-    # --------------------------------------------------------
-    # PROCESSING TIME ANALYSIS
-    # --------------------------------------------------------
-
-    processing_analysis = analyze_processing_times(
-
-        summary["processing_times"],
-
-        config["sla_hours"]
-    )
-
-
-    # --------------------------------------------------------
-    # DATA QUALITY RISK
-    # --------------------------------------------------------
-
-    data_quality_result = calculate_data_quality_risk(
-
-        source=source,
-
-        anomaly_records_received=
-            summary["anomaly_records_received"],
-
-        rule_anomalies=
-            summary["rule_anomalies"],
-
-        ml_anomalies=
-            summary["ml_anomalies"],
-
-        anomaly_rate_result=
-            anomaly_rate_result,
-
-        average_risk_score=
-            summary["average_risk_score"]
-    )
-
-
-    # --------------------------------------------------------
-    # SLA RISK
-    # --------------------------------------------------------
-
-    sla_result = calculate_sla_risk(
-
-        processing_analysis
-    )
-
-
-    # --------------------------------------------------------
-    # OVERALL RISK
-    # --------------------------------------------------------
-
-    overall_result = calculate_overall_risk(
-
-        data_quality_result,
-
-        sla_result
-    )
-
-
-    # --------------------------------------------------------
-    # RECOMMENDATIONS
-    # --------------------------------------------------------
-
-    recommendations = generate_recommendations(
-
-        source=source,
-
-        anomaly_rate_result=
-            anomaly_rate_result,
-
-        anomaly_records_received=
-            summary["anomaly_records_received"],
-
-        rule_anomalies=
-            summary["rule_anomalies"],
-
-        ml_anomalies=
-            summary["ml_anomalies"],
-
-        processing_analysis=
-            processing_analysis,
-
-        data_quality_result=
-            data_quality_result,
-
-        sla_result=
-            sla_result,
-
-        overall_result=
-            overall_result
-    )
-
-
-    # --------------------------------------------------------
-    # FINAL SOURCE OUTPUT
-    # --------------------------------------------------------
-
-    return {
-
-        "source":
-            source,
-
-
-        "pipeline_run_id":
-
-            f"{source.upper()}_"
-            f"{datetime.now().strftime('%Y%m%d_%H%M%S')}",
-
-
-        # ----------------------------------------------------
-        # DATA METRICS
-        # ----------------------------------------------------
-
-        "metrics": {
-
-            "anomaly_records_received":
-
-                summary["anomaly_records_received"],
-
-
-            "total_pipeline_records":
-
-                total_pipeline_records,
-
-
-            "anomaly_rate_available":
-
-                anomaly_rate_result["available"],
-
-
-            "pipeline_anomaly_rate":
-
-                round(
-                    anomaly_rate_result["rate"],
-                    4
-                )
-
-                if anomaly_rate_result["available"]
-
-                else None,
-
-
-            "rule_anomalies":
-
-                summary["rule_anomalies"],
-
-
-            "ml_anomalies":
-
-                summary["ml_anomalies"],
-
-
-            "average_anomaly_risk_score":
-
-                round(
-                    summary["average_risk_score"],
-                    4
-                )
+            "overall_anomaly_rate":
+                overall_anomaly_rate
         },
 
+        "overall_sla_risk": {
 
-        # ----------------------------------------------------
-        # PROCESSING MONITORING
-        # ----------------------------------------------------
+            "risk_score":
+                overall_sla_score,
 
-        "processing_monitoring":
-
-            processing_analysis,
-
-
-        # ----------------------------------------------------
-        # DATA QUALITY RISK
-        # ----------------------------------------------------
-
-        "data_quality_monitoring":
-
-            data_quality_result,
-
-
-        # ----------------------------------------------------
-        # SLA MONITORING
-        # ----------------------------------------------------
-
-        "sla_monitoring": {
-
-            "configured_sla_hours":
-
-                config["sla_hours"],
-
-
-            "sla_risk":
-
-                sla_result["sla_risk"],
-
-
-            "risk_points":
-
-                sla_result["risk_points"],
-
-
-            "risk_reasons":
-
-                sla_result["risk_reasons"]
+            "risk_level":
+                overall_risk_level
         },
 
+        "overall_sla_recommendation": {
 
-        # ----------------------------------------------------
-        # OVERALL PIPELINE RISK
-        # ----------------------------------------------------
+            "action":
+                overall_recommendation["action"],
 
-        "overall_risk":
+            "recommendation":
+                overall_recommendation["recommendation"]
+        },
 
-            overall_result,
+        "dataset_risk_summary":
+            dataset_risk_summary,
 
-
-        # ----------------------------------------------------
-        # RECOMMENDATIONS
-        # ----------------------------------------------------
-
-        "recommendations":
-
-            recommendations
+        "dataset_results":
+            results
     }
-
-
-# ============================================================
-# MAIN FUNCTION
-# ============================================================
-
-def main():
-
-    final_output = {
-
-        "generated_at":
-
-            datetime.now().isoformat(),
-
-
-        "sources": []
-    }
-
-
-    # ========================================================
-    # CLAIMS
-    # ========================================================
-
-    print("\n" + "#" * 60)
-    print("LOADING CLAIMS JSON")
-    print("#" * 60)
-
-
-    claims_data = load_json(
-        CLAIMS_JSON_PATH
-    )
-
-
-    if claims_data is not None:
-
-        claims_records = find_record_list(
-            claims_data
-        )
-
-
-        print(
-            f"Claims records extracted: "
-            f"{len(claims_records)}"
-        )
-
-
-        if claims_records:
-
-            print(
-                "Claims first record keys:"
-            )
-
-            print(
-                list(
-                    claims_records[0].keys()
-                )
-            )
-
-
-            claims_source = detect_source(
-                claims_records
-            )
-
-
-            print(
-                f"Detected source: "
-                f"{claims_source}"
-            )
-
-
-            claims_result = analyze_source(
-
-                source="claims",
-
-                records=claims_records,
-
-                original_json_data=claims_data
-            )
-
-
-            if claims_result is not None:
-
-                final_output["sources"].append(
-                    claims_result
-                )
-
-
-        else:
-
-            print(
-                "WARNING: No records found in Claims JSON."
-            )
-
-
-    # ========================================================
-    # AUTHORIZATION
-    # ========================================================
-
-    print("\n" + "#" * 60)
-    print("LOADING AUTHORIZATION JSON")
-    print("#" * 60)
-
-
-    authorization_data = load_json(
-        AUTHORIZATION_JSON_PATH
-    )
-
-
-    if authorization_data is not None:
-
-        authorization_records = find_record_list(
-            authorization_data
-        )
-
-
-        print(
-            f"Authorization records extracted: "
-            f"{len(authorization_records)}"
-        )
-
-
-        if authorization_records:
-
-            print(
-                "Authorization first record keys:"
-            )
-
-            print(
-                list(
-                    authorization_records[0].keys()
-                )
-            )
-
-
-            authorization_source = detect_source(
-                authorization_records
-            )
-
-
-            print(
-                f"Detected source: "
-                f"{authorization_source}"
-            )
-
-
-            authorization_result = analyze_source(
-
-                source="authorization",
-
-                records=authorization_records,
-
-                original_json_data=authorization_data
-            )
-
-
-            if authorization_result is not None:
-
-                final_output["sources"].append(
-                    authorization_result
-                )
-
-
-        else:
-
-            print(
-                "WARNING: No records found in Authorization JSON."
-            )
-
 
     # ========================================================
     # SAVE OUTPUT
     # ========================================================
 
-    try:
+    output_path = Path(output_path)
 
-        with open(
-            OUTPUT_PATH,
-            "w",
-            encoding="utf-8"
-        ) as file:
+    output_path.parent.mkdir(
+        parents=True,
+        exist_ok=True
+    )
 
-            json.dump(
+    with open(
+        output_path,
+        "w",
+        encoding="utf-8"
+    ) as file:
 
-                final_output,
-
-                file,
-
-                indent=4,
-
-                ensure_ascii=False
-            )
-
-
-        # ====================================================
-        # TERMINAL OUTPUT
-        # ====================================================
-
-        print("\n" + "=" * 60)
-        print("SLA MONITORING COMPLETED")
-        print("=" * 60)
-
-
-        print(
-            f"\nSources successfully processed: "
-            f"{len(final_output['sources'])}"
+        json.dump(
+            output,
+            file,
+            indent=4,
+            ensure_ascii=False
         )
 
+    # ========================================================
+    # CONSOLE OUTPUT
+    # ========================================================
 
-        for result in final_output["sources"]:
+    print(
+        "\n"
+        + "=" * 60
+    )
 
-            print("\n" + "-" * 50)
+    print(
+        "SLA MONITORING COMPLETED"
+    )
 
-            print(
-                f"Source: "
-                f"{result['source']}"
-            )
+    print(
+        "=" * 60
+    )
 
+    print(
+        f"Datasets Processed : {len(results)}"
+    )
 
-            print(
-                f"Anomaly Records Received: "
-                f"{result['metrics']['anomaly_records_received']}"
-            )
+    print(
+        f"Total Records      : {total_records}"
+    )
 
+    print(
+        f"Total Anomalies    : {total_anomalies}"
+    )
 
-            print(
-                f"Total Pipeline Records: "
-                f"{result['metrics']['total_pipeline_records']}"
-            )
+    print(
+        f"Overall Anomaly %  : {overall_anomaly_rate}%"
+    )
 
+    print(
+        f"Overall SLA Score  : {overall_sla_score}"
+    )
 
-            if result["metrics"]["anomaly_rate_available"]:
+    print(
+        f"Overall SLA Risk   : {overall_risk_level}"
+    )
 
-                print(
-                    f"Actual Pipeline Anomaly Rate: "
-                    f"{result['metrics']['pipeline_anomaly_rate']:.2%}"
-                )
+    print(
+        f"Recommended Action : "
+        f"{overall_recommendation['action']}"
+    )
 
-            else:
+    print(
+        "\nRecommendation:"
+    )
 
-                print(
-                    "Actual Pipeline Anomaly Rate: "
-                    "NOT AVAILABLE"
-                )
+    print(
+        overall_recommendation["recommendation"]
+    )
 
+    print(
+        f"\nOutput saved to:\n{output_path}"
+    )
 
-            print(
-                f"Rule Anomalies: "
-                f"{result['metrics']['rule_anomalies']}"
-            )
-
-
-            print(
-                f"ML Anomalies: "
-                f"{result['metrics']['ml_anomalies']}"
-            )
-
-
-            print(
-                f"Data Quality Risk: "
-                f"{result['data_quality_monitoring']['data_quality_risk']}"
-            )
-
-
-            print(
-                f"SLA Risk: "
-                f"{result['sla_monitoring']['sla_risk']}"
-            )
-
-
-            print(
-                f"Overall Pipeline Risk: "
-                f"{result['overall_risk']['overall_pipeline_risk']}"
-            )
-
-
-        print(
-            "\nOutput saved to:"
-        )
-
-        print(
-            OUTPUT_PATH
-        )
-
-
-    except Exception as error:
-
-        print(
-            "\nERROR saving output:"
-        )
-
-        print(
-            error
-        )
+    return output
 
 
 # ============================================================
-# RUN
+# RUN LOCALLY
 # ============================================================
 
 if __name__ == "__main__":
 
-    main()
+    run_sla_monitoring()
