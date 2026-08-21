@@ -11,9 +11,15 @@ from app.models.anomaly import Anomaly  # noqa: ensure table created
 from app.services.auth_service import hash_password
 from app.utils.enums import UserRole, AnomalySeverity, AnomalyStatus, AnomalyType, SourceDataset
 
-SQLALCHEMY_TEST_URL = "sqlite:///./test.db"
+from sqlalchemy.pool import StaticPool
 
-engine = create_engine(SQLALCHEMY_TEST_URL, connect_args={"check_same_thread": False})
+SQLALCHEMY_TEST_URL = "sqlite:///:memory:"
+
+engine = create_engine(
+    SQLALCHEMY_TEST_URL,
+    connect_args={"check_same_thread": False},
+    poolclass=StaticPool,
+)
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
@@ -54,6 +60,9 @@ def admin_user(db):
         password_hash=hash_password("Admin1234!"),
         role=UserRole.ADMIN,
         is_active=True,
+        phone_number=None,
+        invite_token=None,
+        invite_token_expires_at=None,
     )
     db.add(user)
     db.commit()
@@ -70,6 +79,9 @@ def worker_user(db):
         password_hash=hash_password("Worker1234!"),
         role=UserRole.WORKER,
         is_active=True,
+        phone_number=None,
+        invite_token=None,
+        invite_token_expires_at=None,
     )
     db.add(user)
     db.commit()

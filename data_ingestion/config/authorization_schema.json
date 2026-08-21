@@ -1,0 +1,84 @@
+{
+  "required_columns": [
+    "authorization_id",
+    "patient_id",
+    "provider_id",
+    "request_date",
+    "authorization_type",
+    "service_code",
+    "approval_status"
+  ],
+  "date_format": "%Y-%m-%d",
+  "types": {
+    "authorization_id": "string",
+    "patient_id": "string",
+    "provider_id": "string",
+    "payer_id": "string",
+    "reference_number": "string",
+    "request_date": "date",
+    "approval_date": "date",
+    "valid_from_date": "date",
+    "valid_to_date": "date",
+    "authorization_type": "string",
+    "service_code": "string",
+    "service_description": "string",
+    "requested_quantity": "float",
+    "charged_amount": "float",
+    "approval_status": "string",
+    "diagnosis_code": "string",
+    "notes": "string",
+    "processing_time_hours": "float",
+    "missing_document_count": "integer",
+    "resubmission_count": "integer"
+  },
+  "allowed_values": {
+    "approval_status": [
+      "approved",
+      "denied",
+      "pending",
+      "partial",
+      "APPROVED",
+      "DENIED",
+      "PENDING",
+      "PARTIAL"
+    ],
+    "authorization_type": [
+      "medication",
+      "procedure",
+      "imaging",
+      "DME",
+      "dme",
+      "inpatient",
+      "outpatient",
+      "diagnostic",
+      "specialist"
+    ]
+  },
+  "non_negative": [
+    "requested_quantity",
+    "charged_amount",
+    "processing_time_hours",
+    "missing_document_count",
+    "resubmission_count"
+  ],
+  "unique_columns": [
+    "authorization_id"
+  ],
+  "column_aliases": {
+    "authorization_id": ["auth_id", "authid", "authorization_no", "auth_no", "authorization number"],
+    "patient_id": ["patientid", "member_id", "patient_no", "memberid"],
+    "provider_id": ["providerid", "provider_no", "prov_id", "npi"],
+    "payer_id": ["payerid", "insurance_id", "plan_id"],
+    "reference_number": ["ref_no", "referencenumber", "ref_num"],
+    "request_date": ["requestdate", "date_requested", "submission_date"],
+    "authorization_type": ["auth_type", "type", "service_type"],
+    "service_code": ["servicecode", "procedure_code", "cpt_code", "ndc_code"],
+    "service_description": ["description", "service_desc"],
+    "requested_quantity": ["quantity", "units_requested", "qty"],
+    "charged_amount": ["amount", "charge", "total_amount", "billed_amount"],
+    "approval_status": ["status", "auth_status"],
+    "diagnosis_code": ["dx_code", "icd_code", "diagnosis"],
+    "processing_time_hours": ["processing_time", "turnaround_hours", "processing_hrs"]
+  }
+}
+

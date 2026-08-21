@@ -27,6 +27,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.dependencies.auth import require_admin
 from app.models.anomaly import Anomaly
+from app.models.audit_log import AuditLog
 from app.models.user import User
 from app.realtime.manager import anomaly_manager
 from app.schemas.anomaly import AnomalyResponse
@@ -49,8 +50,7 @@ router = APIRouter(prefix="/datasets", tags=["Datasets"])
 SCHEMA_MAP = {
     "CLAIMS":        _ETL_CONFIG / "claims_schema.json",
     "PHARMACY":      _ETL_CONFIG / "pharmacy_schema.json",
-    # Authorization uses claims schema until auth-specific schema is added
-    "AUTHORIZATION": _ETL_CONFIG / "claims_schema.json",
+    "AUTHORIZATION": _ETL_CONFIG / "authorization_schema.json",
 }
 
 SEVERITY_MAP = {
@@ -130,72 +130,116 @@ async def upload_dataset(
     finally:
         tmp_path.unlink(missing_ok=True)   # clean up temp file
 
-    # ── ML scoring for AUTHORIZATION records ─────────────────────────────
+    # ── ML scoring for AUTHORIZATION records — full 3-tier pipeline ─────────
     anomalies_created = 0
+    last_anomaly = None
 
-    if source_type == "AUTHORIZATION" and ml_service.is_available() and len(valid_df) > 0:
-        records = valid_df.to_dict(orient="records")
+    _RULE_TO_ANOMALY_TYPE: dict[str, AnomalyType] = {
+        "MISSING_DATA":            AnomalyType.MISSING_FIELD,
+        "INVALID_DATE":            AnomalyType.INVALID_DOMAIN,
+        "FUTURE_REQUEST":          AnomalyType.INVALID_DOMAIN,
+        "APPROVAL_BEFORE_REQUEST": AnomalyType.INVALID_DOMAIN,
+        "INVALID_VALIDITY_RANGE":  AnomalyType.INVALID_DOMAIN,
+        "NEGATIVE_QUANTITY":       AnomalyType.NEGATIVE_VALUE,
+        "NEGATIVE_AMOUNT":         AnomalyType.NEGATIVE_VALUE,
+        "UNUSUAL_QUANTITY":        AnomalyType.SLA_PROCESSING_SPIKE,
+        "UNUSUAL_AMOUNT":          AnomalyType.SLA_PROCESSING_SPIKE,
+        "DUPLICATE_RECORD":        AnomalyType.DUPLICATE_RECORD,
+    }
 
-        for row in records:
-            try:
-                result = ml_service.predict({
-                    "processing_time_hours":              _safe_float(row.get("processing_time_hours")),
-                    "missing_document_count":             _safe_float(row.get("missing_document_count")),
-                    "resubmission_count":                 _safe_float(row.get("resubmission_count")),
-                    "authorization_to_service_days":      _safe_float(row.get("authorization_to_service_days")),
-                    "provider_avg_processing_time":       _safe_float(row.get("provider_avg_processing_time")),
-                    "provider_avg_resubmission":          _safe_float(row.get("provider_avg_resubmission")),
-                    "provider_avg_missing_docs":          _safe_float(row.get("provider_avg_missing_docs")),
-                    "processing_time_provider_deviation": _safe_float(row.get("processing_time_provider_deviation")),
-                })
-            except Exception:
+    def _pick_anomaly_type(rule_names: list) -> AnomalyType:
+        for name in rule_names:
+            mapped = _RULE_TO_ANOMALY_TYPE.get(str(name).upper())
+            if mapped:
+                return mapped
+        return AnomalyType.INVALID_DOMAIN
+
+    if ml_service.is_available(source_type) and len(valid_df) > 0:
+        try:
+            _, all_results = ml_service.run_dataframe_inference(valid_df, source_type=source_type)
+        except Exception as exc:
+            all_results = []
+
+        id_field_map = {
+            "AUTHORIZATION": "authorization_id",
+            "CLAIMS": "claim_id",
+            "PHARMACY": "prescription_id",
+        }
+        id_field = id_field_map.get(source_type, "id")
+
+        for row_idx, result in enumerate(all_results):
+            if not result.get("is_anomaly", False):
                 continue
 
-            if not result["is_anomaly"]:
-                continue
+            row = valid_df.iloc[row_idx].to_dict() if row_idx < len(valid_df) else {}
 
-            top    = result["contributing_features"]
-            field  = top[0]["feature"] if top else "multiple_fields"
-            errmsg = (
-                f"{field} is {top[0]['direction'].replace('_', ' ')} "
-                f"(value={top[0]['value']}, deviation={top[0]['deviation_score']}σ)"
-                if top else "Unusual authorization pattern"
-            )
+            rule_engine = result.get("rule_engine", {})
+            rule_names   = rule_engine.get("rule_names", []) if isinstance(rule_engine, dict) else result.get("rule_names", [])
+            rule_reasons = rule_engine.get("rule_reasons", []) if isinstance(rule_engine, dict) else result.get("rule_reasons", [])
+            severity_str = result.get("severity", "MEDIUM")
+
+            # Build human-readable error message
+            if rule_names:
+                error_msg = f"{source_type} rule violation: " + "; ".join(rule_names[:3])
+                if rule_reasons:
+                    error_msg += " | " + rule_reasons[0]
+            elif result.get("ml_evidence", {}).get("evidence_count", 0) > 0:
+                ml_ev     = result.get("ml_evidence", {})
+                error_msg = f"ML model flagged {source_type} anomaly: {ml_ev.get('summary', 'Density deviation')}"
+            else:
+                prob      = result.get("bayesian", {}).get("probability", 0.0)
+                error_msg = f"ML anomaly probability: {prob:.2%}"
+
+            affected_field = rule_names[0] if rule_names else "multiple_fields"
+            record_id      = str(row.get(id_field, row.get("record_id", f"{source_type}_{uuid.uuid4().hex[:6]}")))
 
             anomaly = Anomaly(
-                source_dataset  = SourceDataset.AUTHORIZATION,
-                record_id       = str(row.get("authorization_id", f"ROW_{uuid.uuid4()[:6]}")),
-                anomaly_type    = AnomalyType.SLA_PROCESSING_SPIKE,
-                severity        = SEVERITY_MAP.get(result["severity"], AnomalySeverity.MEDIUM),
+                source_dataset  = SOURCE_MAP.get(source_type, SourceDataset.AUTHORIZATION),
+                record_id       = record_id,
+                anomaly_type    = _pick_anomaly_type(rule_names),
+                severity        = SEVERITY_MAP.get(severity_str, AnomalySeverity.MEDIUM),
                 status          = AnomalyStatus.OPEN,
-                affected_field  = field,
-                error_message   = errmsg,
-                likely_cause    = "Provider behaviour deviates from peer baseline.",
-                recommended_fix = "Review record against provider history.",
-                raw_record      = {k: str(v) for k, v in row.items()},
+                affected_field  = affected_field[:255],
+                error_message   = error_msg[:500],
+                likely_cause    = (
+                    "; ".join(rule_reasons[:2]) if rule_reasons
+                    else f"{source_type} data quality anomaly detected by ML pipeline."
+                )[:500],
+                recommended_fix = f"Review the {source_type.lower()} record in the source system. Correct the identified violation and revalidate.",
+                raw_record      = {
+                    "record_id":            record_id,
+                    "risk_score":           result.get("risk_score", 0),
+                    "severity":             severity_str,
+                    "signals":              result.get("signals", "None"),
+                    "rule_count":           len(rule_names),
+                    "rule_names":           rule_names,
+                    "bayesian_probability": result.get("bayesian", {}).get("probability", 0.0),
+                    "model":                result.get("model", f"{source_type}_Pipeline"),
+                },
             )
             db.add(anomaly)
             anomalies_created += 1
+            last_anomaly = anomaly
 
         if anomalies_created:
             db.commit()
-            # Broadcast last anomaly (frontend will refetch count)
-            db.refresh(anomaly)
-            await anomaly_manager.broadcast_anomaly(
-                AnomalyResponse.model_validate(anomaly).model_dump(mode="json")
-            )
+            if last_anomaly:
+                db.refresh(last_anomaly)
+                await anomaly_manager.broadcast_anomaly(
+                    AnomalyResponse.model_validate(last_anomaly).model_dump(mode="json")
+                )
 
-    # ── Rule-based anomalies for CLAIMS / PHARMACY invalid rows ──────────
-    elif source_type in ("CLAIMS", "PHARMACY") and len(invalid_df) > 0:
-        issue_map = {i["column"]: i["message"] for i in report["issues"] if "column" in i}
+    # ── Rule-based anomalies for schema-invalid rows (all sources) ─────────
+    if len(invalid_df) > 0:
+        issue_map = {i["column"]: i["message"] for i in report.get("issues", []) if "column" in i}
 
         for _, row in invalid_df.head(100).iterrows():  # cap at 100 per upload
             affected = next(
                 (col for col in issue_map if col in row.index and str(row.get(col, "")).strip() == ""),
                 "multiple_fields",
             )
-            id_field = "claim_id" if source_type == "CLAIMS" else "prescription_id"
-            record_id = str(row.get(id_field, f"ROW_{uuid.uuid4()[:6]}"))
+            id_field = "claim_id" if source_type == "CLAIMS" else ("prescription_id" if source_type == "PHARMACY" else "authorization_id")
+            record_id = str(row.get(id_field, f"ROW_{uuid.uuid4().hex[:6]}"))
 
             anomaly = Anomaly(
                 source_dataset  = SOURCE_MAP[source_type],
@@ -214,6 +258,27 @@ async def upload_dataset(
 
         if anomalies_created:
             db.commit()
+
+    # Log ingestion action in Audit Trail
+    audit_entry = AuditLog(
+        action=f"DATASET_INGESTION_{source_type}",
+        source_dataset=source_type,
+        field_name="dataset_upload",
+        new_value=file.filename,
+        performed_by=admin.name,
+        notes=f"Uploaded {file.filename} ({source_type}): {report['total_records']} total, {report['valid_records']} valid, {report['invalid_records']} invalid, {anomalies_created} anomalies flagged.",
+        metadata_json={
+            "upload_id": upload_id,
+            "filename": file.filename,
+            "source_type": source_type,
+            "total_records": report["total_records"],
+            "valid_records": report["valid_records"],
+            "invalid_records": report["invalid_records"],
+            "anomalies_created": anomalies_created,
+        }
+    )
+    db.add(audit_entry)
+    db.commit()
 
     return ValidationReport(
         upload_id       = upload_id,

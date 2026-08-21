@@ -1,0 +1,17 @@
+{
+  "email_notifications_enabled": true,
+  "worker_invitations": true,
+  "critical_anomalies": true,
+  "sla_at_risk": true,
+  "sla_breached": true,
+  "pipeline_failures": true,
+  "worker_assignments": true,
+  "smtp_host": "smtp.gmail.com",
+  "smtp_port": 587,
+  "smtp_username": "divyanand1105@gmail.com",
+  "smtp_password": "iyurywziuqkehrew",
+  "smtp_from_email": "divyanand1105@gmail.com",
+  "smtp_from_name": "Healthcare DQ Monitor",
+  "smtp_use_tls": true,
+  "admin_alert_email": "divyanand1105@gmail.com"
+}

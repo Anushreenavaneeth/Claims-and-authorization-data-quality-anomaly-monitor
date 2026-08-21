@@ -45,3 +45,32 @@ class AnomalyListResponse(BaseModel):
     page:      int
     page_size: int
     items:     list[AnomalyResponse]
+
+
+class AnomalyFeedbackRequest(BaseModel):
+    action:           str  # "ACCEPTED" | "REJECTED" | "MODIFIED" | "FALSE_POSITIVE"
+    rating:           Optional[int] = 5  # 1-5 scale
+    notes:            Optional[str] = None
+    corrected_fields: Optional[dict[str, Any]] = None
+
+
+class AnomalyFeedbackResponse(BaseModel):
+    anomaly_id:  str
+    action:      str
+    rating:      Optional[int]
+    status:      str
+    recorded_by: str
+    timestamp:   datetime
+
+
+class SLARiskResponse(BaseModel):
+    target_hours:       int
+    deadline:           str
+    elapsed_hours:      float
+    remaining_hours:    float
+    breach_probability: float
+    sla_status:         str
+    sla_risk_tier:      str
+    sla_risk_score:     int
+    recommendation:     str
+

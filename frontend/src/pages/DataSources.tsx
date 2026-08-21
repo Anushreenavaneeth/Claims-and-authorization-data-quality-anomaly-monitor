@@ -1,269 +1,421 @@
-import { useState, useRef } from 'react';
-import DashboardShell from '../components/DashboardShell';
-import api from '../services/api';
-import {
-  Upload, FileText, CheckCircle2, AlertCircle,
-  Loader2, ChevronDown, ChevronUp, Database,
-} from 'lucide-react';
+import { useEffect, useState, useRef } from "react";
+import { useNavigate } from "react-router-dom";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "../components/ui/Card";
+import { StatusBadge } from "../components/shared/StatusBadge";
+import { DataTable, type Column } from "../components/ui/DataTable";
+import { Badge } from "../components/ui/Badge";
+import { getDataSources, uploadDatasetFile } from "../services/api";
+import { formatNumber, formatDate } from "../lib/utils";
+import { Database, RefreshCw, Upload, FileText, AlertCircle, Loader2, Cpu, ArrowRight } from "lucide-react";
+import type { DataSource, DatasetUploadResult } from "../types";
 
-type SourceType = 'CLAIMS' | 'PHARMACY' | 'AUTHORIZATION';
-type UploadStatus = 'idle' | 'uploading' | 'success' | 'error';
+export function DataSources() {
+  const navigate = useNavigate();
+  const [sources, setSources] = useState<DataSource[]>([]);
+  const [sourceType, setSourceType] = useState<"CLAIMS" | "PHARMACY" | "AUTHORIZATION">("AUTHORIZATION");
+  const [uploadStatus, setUploadStatus] = useState<"idle" | "uploading" | "success" | "error">("idle");
+  const [uploadResult, setUploadResult] = useState<DatasetUploadResult | null>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [dragOver, setDragOver] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-interface Issue {
-  type: string;
-  severity: string;
-  column?: string;
-  rows?: number;
-  message: string;
-}
 
-interface UploadResult {
-  upload_id:         string;
-  filename:          string;
-  source_type:       string;
-  total_records:     number;
-  valid_records:     number;
-  invalid_records:   number;
-  status:            string;
-  issues:            Issue[];
-  anomalies_created: number;
-  timestamp:         string;
-}
+  useEffect(() => {
+    loadSources();
+  }, []);
 
-const SOURCE_OPTIONS: { value: SourceType; label: string; desc: string; color: string }[] = [
-  { value: 'CLAIMS',        label: 'Claims',        desc: 'Insurance claims data',         color: '#60a5fa' },
-  { value: 'PHARMACY',      label: 'Pharmacy',       desc: 'Prescription / drug data',      color: '#a78bfa' },
-  { value: 'AUTHORIZATION', label: 'Authorization',  desc: 'Pre-auth / approval records',   color: '#34d399' },
-];
-
-export default function DataSources() {
-  const [sourceType, setSourceType] = useState<SourceType>('CLAIMS');
-  const [status,     setStatus]     = useState<UploadStatus>('idle');
-  const [result,     setResult]     = useState<UploadResult | null>(null);
-  const [errorMsg,   setErrorMsg]   = useState('');
-  const [showIssues, setShowIssues] = useState(false);
-  const [dragOver,   setDragOver]   = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  const upload = async (file: File) => {
-    setStatus('uploading');
-    setResult(null);
-    setErrorMsg('');
-
-    const form = new FormData();
-    form.append('file', file);
-    form.append('source_type', sourceType);
-
-    try {
-      const res = await api.post('/datasets/upload', form, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
-      setResult(res.data);
-      setStatus('success');
-      setShowIssues(res.data.issues.length > 0);
-    } catch (err: unknown) {
-      const detail = (err as { response?: { data?: { detail?: string } } })
-        ?.response?.data?.detail;
-      setErrorMsg(typeof detail === 'string' ? detail : 'Upload failed. Try again.');
-      setStatus('error');
-    }
+  const loadSources = async () => {
+    const data = await getDataSources();
+    setSources(data);
   };
 
-  const handleFile = (file: File | null) => {
-    if (!file) return;
-    if (!file.name.endsWith('.csv')) {
-      setErrorMsg('Only .csv files are supported.');
-      setStatus('error');
+  const handleFileUpload = async (file: File) => {
+    if (!file.name.endsWith(".csv")) {
+      setUploadError("Only .csv files are supported.");
+      setUploadStatus("error");
       return;
     }
-    upload(file);
+
+    setUploadStatus("uploading");
+    setUploadError(null);
+    setUploadResult(null);
+
+    try {
+      const res = await uploadDatasetFile(file, sourceType);
+      setUploadResult(res);
+      setUploadStatus("success");
+      loadSources();
+    } catch (err: any) {
+      const msg = err.response?.data?.detail || "Upload failed. Verify backend service is running.";
+      setUploadError(typeof msg === "string" ? msg : JSON.stringify(msg));
+      setUploadStatus("error");
+    }
   };
 
   const onDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setDragOver(false);
-    handleFile(e.dataTransfer.files[0] ?? null);
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      handleFileUpload(e.dataTransfer.files[0]);
+    }
   };
 
-  const src = SOURCE_OPTIONS.find(s => s.value === sourceType)!;
+  const columns: Column<DataSource>[] = [
+    {
+      key: "name",
+      label: "Source Name",
+      sortable: true,
+      render: (row) => (
+        <div>
+          <div className="font-medium">{row.name}</div>
+          <div className="text-xs text-muted-foreground">{row.subType}</div>
+        </div>
+      ),
+    },
+    {
+      key: "type",
+      label: "Type",
+      sortable: true,
+    },
+    {
+      key: "recordCount",
+      label: "Records",
+      sortable: true,
+      render: (row) => formatNumber(row.recordCount),
+    },
+    {
+      key: "ingestionRate",
+      label: "Ingestion Rate",
+      sortable: true,
+      render: (row) => `${row.ingestionRate || 0}/min`,
+    },
+    {
+      key: "errorCount",
+      label: "Errors",
+      sortable: true,
+      render: (row) => (
+        <span className={row.errorCount > 50 ? "text-red-600 font-medium" : ""}>
+          {row.errorCount}
+        </span>
+      ),
+    },
+    {
+      key: "lastSync",
+      label: "Last Sync",
+      sortable: true,
+      render: (row) => (
+        <span className="text-xs">{formatDate(row.lastSync)}</span>
+      ),
+    },
+    {
+      key: "status",
+      label: "Status",
+      sortable: true,
+      render: (row) => <StatusBadge status={row.status} />,
+    },
+  ];
 
   return (
-    <DashboardShell>
-      <div className="max-w-2xl">
-        <p className="text-[10px] font-mono tracking-widest text-slate-600 uppercase mb-1">
-          Admin · Data Sources
-        </p>
-        <h1 className="font-display text-2xl font-bold text-white mb-6">Upload Dataset</h1>
-
-        {/* Source type selector */}
-        <div className="grid grid-cols-3 gap-2 mb-6">
-          {SOURCE_OPTIONS.map(opt => (
-            <button
-              key={opt.value}
-              onClick={() => setSourceType(opt.value)}
-              className="rounded-xl p-3 text-left transition-all"
-              style={
-                sourceType === opt.value
-                  ? { background: `${opt.color}15`, border: `1px solid ${opt.color}50` }
-                  : { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }
-              }
-            >
-              <p className="text-xs font-semibold text-white mb-0.5">{opt.label}</p>
-              <p className="text-[10px] font-mono text-slate-500">{opt.desc}</p>
-            </button>
-          ))}
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold">Data Sources & Ingestion</h1>
+          <p className="text-muted-foreground mt-1">
+            Monitor and manage data ingestion with automated ETL validation & ML anomaly detection
+          </p>
         </div>
-
-        {/* Drop zone */}
-        <div
-          onDragOver={e => { e.preventDefault(); setDragOver(true); }}
-          onDragLeave={() => setDragOver(false)}
-          onDrop={onDrop}
-          onClick={() => inputRef.current?.click()}
-          className="rounded-xl cursor-pointer transition-all mb-4"
-          style={{
-            border: dragOver
-              ? `2px dashed ${src.color}`
-              : '2px dashed rgba(255,255,255,0.08)',
-            background: dragOver
-              ? `${src.color}08`
-              : 'rgba(255,255,255,0.02)',
-            padding: '40px 24px',
-          }}
+        <button
+          onClick={loadSources}
+          className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 shadow-sm"
         >
-          <input
-            ref={inputRef}
-            type="file"
-            accept=".csv"
-            className="hidden"
-            onChange={e => handleFile(e.target.files?.[0] ?? null)}
-          />
-          <div className="flex flex-col items-center gap-3 text-center">
-            {status === 'uploading' ? (
-              <Loader2 className="w-8 h-8 text-blue-400 animate-spin" />
-            ) : (
-              <div className="w-12 h-12 rounded-xl flex items-center justify-center"
-                   style={{ background: `${src.color}12`, border: `1px solid ${src.color}30` }}>
-                <Upload className="w-5 h-5" style={{ color: src.color }} />
-              </div>
-            )}
-            <div>
-              <p className="text-sm font-medium text-slate-200">
-                {status === 'uploading' ? 'Validating…' : 'Drop CSV here or click to browse'}
-              </p>
-              <p className="text-[11px] font-mono text-slate-600 mt-0.5">
-                {src.label} · CSV only · validated against schema
-              </p>
-            </div>
-          </div>
-        </div>
+          <RefreshCw className="h-4 w-4" />
+          Refresh
+        </button>
+      </div>
 
-        {/* Error */}
-        {status === 'error' && (
-          <div className="flex items-start gap-2.5 px-4 py-3 rounded-lg mb-4 text-sm font-mono text-red-400"
-               style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)' }}
-               role="alert">
-            <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
-            {errorMsg}
-          </div>
-        )}
-
-        {/* Result card */}
-        {status === 'success' && result && (
-          <div className="rounded-xl overflow-hidden"
-               style={{ background: 'rgba(6,14,28,0.8)', border: '1px solid rgba(255,255,255,0.07)' }}>
-            {/* Header */}
-            <div className="px-5 py-4 flex items-center gap-3"
-                 style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-              <FileText className="w-4 h-4 text-slate-400 flex-shrink-0" />
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-slate-200 truncate">{result.filename}</p>
-                <p className="text-[10px] font-mono text-slate-500">{result.source_type} · {result.timestamp.slice(0, 19).replace('T', ' ')} UTC</p>
-              </div>
-              <span
-                className="text-[10px] font-mono font-bold px-2.5 py-1 rounded-full"
-                style={result.status === 'PASS'
-                  ? { background: 'rgba(34,197,94,0.1)', color: '#4ade80', border: '1px solid rgba(34,197,94,0.2)' }
-                  : { background: 'rgba(239,68,68,0.1)', color: '#f87171', border: '1px solid rgba(239,68,68,0.2)' }}
+      {/* Dataset Ingestion Dropzone Card */}
+      <Card className="border-slate-200 shadow-sm bg-white overflow-hidden">
+        <CardHeader className="pb-3 border-b border-slate-100">
+          <CardTitle className="text-base font-semibold text-slate-900 flex items-center gap-2">
+            <Upload className="h-4 w-4 text-blue-600" />
+            Upload Dataset for Automated Pipeline & ML Scoring
+          </CardTitle>
+          <CardDescription className="text-xs text-slate-500">
+            Upload CSV files for Claims, Pharmacy, or Authorization records. Authorization files are scored against the Isolation Forest model in real time.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="pt-4 space-y-4">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-semibold text-slate-700">Target Schema:</span>
+            {(["AUTHORIZATION", "CLAIMS", "PHARMACY"] as const).map((type) => (
+              <button
+                key={type}
+                type="button"
+                onClick={() => setSourceType(type)}
+                className={`px-3 py-1 text-xs font-semibold rounded-lg border transition-all ${
+                  sourceType === type
+                    ? "bg-blue-50 border-blue-300 text-blue-700 shadow-sm"
+                    : "bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100"
+                }`}
               >
-                {result.status}
-              </span>
-            </div>
+                {type}
+              </button>
+            ))}
+          </div>
 
-            {/* Stats row */}
-            <div className="grid grid-cols-4 divide-x"
-                 style={{ borderBottom: '1px solid rgba(255,255,255,0.06)', divideBorderColor: 'rgba(255,255,255,0.06)' }}>
-              {[
-                { label: 'Total',    value: result.total_records,   color: '#94a3b8' },
-                { label: 'Valid',    value: result.valid_records,    color: '#4ade80' },
-                { label: 'Invalid',  value: result.invalid_records,  color: result.invalid_records > 0 ? '#f87171' : '#4ade80' },
-                { label: 'Anomalies', value: result.anomalies_created, color: result.anomalies_created > 0 ? '#fb923c' : '#94a3b8' },
-              ].map(s => (
-                <div key={s.label} className="px-4 py-3 text-center">
-                  <p className="font-display text-xl font-bold" style={{ color: s.color }}>{s.value}</p>
-                  <p className="text-[9px] font-mono text-slate-600 uppercase tracking-wider">{s.label}</p>
+          <div
+            onDragOver={(e) => {
+              e.preventDefault();
+              setDragOver(true);
+            }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={onDrop}
+            onClick={() => fileInputRef.current?.click()}
+            className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all ${
+              dragOver
+                ? "border-blue-500 bg-blue-50/50"
+                : "border-slate-200 hover:border-slate-300 bg-slate-50/50"
+            }`}
+          >
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".csv"
+              className="hidden"
+              onChange={(e) => {
+                if (e.target.files && e.target.files[0]) {
+                  handleFileUpload(e.target.files[0]);
+                }
+              }}
+            />
+            <div className="flex flex-col items-center gap-2">
+              {uploadStatus === "uploading" ? (
+                <>
+                  <Loader2 className="h-8 w-8 text-blue-600 animate-spin" />
+                  <p className="text-sm font-semibold text-slate-700">Validating schema & scoring ML models...</p>
+                </>
+              ) : (
+                <>
+                  <div className="p-3 bg-white rounded-full border border-slate-200 shadow-sm text-blue-600">
+                    <Upload className="h-6 w-6" />
+                  </div>
+                  <p className="text-sm font-semibold text-slate-800">
+                    Drop CSV here or click to browse
+                  </p>
+                  <p className="text-xs text-slate-500 font-mono">
+                    {sourceType} Pipeline · Validated against JSON schema rules
+                  </p>
+                </>
+              )}
+            </div>
+          </div>
+
+          {uploadError && (
+            <div className="p-3 rounded-lg bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-center gap-2">
+              <AlertCircle className="h-4 w-4 text-rose-600 flex-shrink-0" />
+              <span>{uploadError}</span>
+            </div>
+          )}
+
+          {uploadResult && (
+            <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <FileText className="h-4 w-4 text-slate-600" />
+                  <span className="font-semibold text-sm text-slate-900">{uploadResult.filename}</span>
+                  <Badge variant={uploadResult.status === "PASS" ? "success" : "warning"}>
+                    {uploadResult.status}
+                  </Badge>
                 </div>
-              ))}
-            </div>
-
-            {/* Anomaly banner */}
-            {result.anomalies_created > 0 && (
-              <div className="px-5 py-3 flex items-center gap-2 text-xs font-mono"
-                   style={{ background: 'rgba(251,146,60,0.06)', borderBottom: '1px solid rgba(251,146,60,0.12)' }}>
-                <CheckCircle2 className="w-3.5 h-3.5 text-orange-400" />
-                <span className="text-orange-300">
-                  {result.anomalies_created} anomaly record{result.anomalies_created > 1 ? 's' : ''} created and broadcast to the live feed.
+                <span className="text-xs text-slate-500 font-mono">
+                  Upload ID: {uploadResult.upload_id}
                 </span>
               </div>
-            )}
 
-            {/* Issues toggle */}
-            {result.issues.length > 0 && (
-              <div>
-                <button
-                  onClick={() => setShowIssues(s => !s)}
-                  className="w-full flex items-center justify-between px-5 py-3 text-xs font-mono text-slate-400 hover:text-slate-200 transition-colors"
-                >
-                  <span>{result.issues.length} validation issue{result.issues.length > 1 ? 's' : ''}</span>
-                  {showIssues ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-                </button>
-                {showIssues && (
-                  <div className="px-5 pb-4 space-y-1.5"
-                       style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
-                    {result.issues.map((iss, i) => (
-                      <div key={i} className="flex items-start gap-2.5 text-xs font-mono py-1">
-                        <span
-                          className="text-[9px] px-1.5 py-0.5 rounded font-bold flex-shrink-0 mt-0.5"
-                          style={iss.severity === 'ERROR'
-                            ? { background: 'rgba(239,68,68,0.12)', color: '#f87171' }
-                            : { background: 'rgba(251,146,60,0.12)', color: '#fb923c' }}
-                        >
-                          {iss.severity}
-                        </span>
-                        <span className="text-slate-400">
-                          {iss.column && <span className="text-blue-400">{iss.column}: </span>}
-                          {iss.message}
-                          {iss.rows != null && <span className="text-slate-600"> ({iss.rows} rows)</span>}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                )}
+              <div className="grid grid-cols-4 gap-2 text-center">
+                <div className="p-2 bg-white rounded-lg border border-slate-200">
+                  <p className="text-xs text-slate-500">Total Rows</p>
+                  <p className="text-base font-bold text-slate-800">{uploadResult.total_records}</p>
+                </div>
+                <div className="p-2 bg-white rounded-lg border border-slate-200">
+                  <p className="text-xs text-slate-500">Valid Rows</p>
+                  <p className="text-base font-bold text-emerald-600">{uploadResult.valid_records}</p>
+                </div>
+                <div className="p-2 bg-white rounded-lg border border-slate-200">
+                  <p className="text-xs text-slate-500">Invalid Rows</p>
+                  <p className="text-base font-bold text-rose-600">{uploadResult.invalid_records}</p>
+                </div>
+                <div className="p-2 bg-white rounded-lg border border-slate-200">
+                  <p className="text-xs text-slate-500">Anomalies Stored</p>
+                  <p className="text-base font-bold text-orange-600">{uploadResult.anomalies_created}</p>
+                </div>
               </div>
-            )}
-          </div>
-        )}
 
-        {/* Upload another */}
-        {status === 'success' && (
-          <button
-            onClick={() => { setStatus('idle'); setResult(null); if (inputRef.current) inputRef.current.value = ''; }}
-            className="mt-4 text-xs font-mono text-slate-600 hover:text-slate-400 transition-colors flex items-center gap-1.5"
-          >
-            <Database className="w-3 h-3" /> Upload another file
-          </button>
-        )}
+              {/* Action Buttons with Analyse */}
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t border-slate-200">
+                <div className="text-xs text-slate-500">
+                  Dataset ingested. Click <strong className="text-slate-800">Analyse</strong> to inspect ML outlier probabilities and root-cause deviations.
+                </div>
+                <div className="flex items-center gap-2.5 w-full sm:w-auto">
+                  <button
+                    type="button"
+                    onClick={() => navigate('/anomalies')}
+                    className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 shadow-xs transition-all"
+                  >
+                    <span>View Anomalies</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => navigate('/ml-engine')}
+                    className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-5 py-2 rounded-lg text-xs font-semibold text-white shadow-sm transition-all hover:bg-blue-700 active:scale-[0.99]"
+                    style={{ background: '#2563eb' }}
+                  >
+                    <Cpu className="w-3.5 h-3.5" />
+                    <span>Analyse</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+        </CardContent>
+      </Card>
+
+      {/* Summary Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-medium text-muted-foreground">
+              Total Sources
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{sources.length}</div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-medium text-muted-foreground">
+              Healthy Sources
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-green-600">
+              {sources.filter((s) => s.status === "healthy").length}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-medium text-muted-foreground">
+              Total Records
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">
+              {formatNumber(sources.reduce((sum, s) => sum + s.recordCount, 0))}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-medium text-muted-foreground">
+              Total Errors
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-red-600">
+              {sources.reduce((sum, s) => sum + s.errorCount, 0)}
+            </div>
+          </CardContent>
+        </Card>
       </div>
-    </DashboardShell>
+
+      {/* Sources Table */}
+      <Card>
+        <CardHeader>
+          <CardTitle>All Data Sources</CardTitle>
+          <CardDescription>
+            Detailed view of all connected data sources and their current status
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <DataTable
+            data={sources}
+            columns={columns}
+          />
+        </CardContent>
+      </Card>
+
+      {/* Detailed Cards by Type */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {["Claims", "Prescriber", "Pharmacy", "Authorization"].map((type) => {
+          const typeSources = sources.filter((s) => s.type === type);
+          if (typeSources.length === 0) return null;
+
+          return (
+            <Card key={type}>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Database className="h-5 w-5" />
+                  {type} Data
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  {typeSources.map((source) => (
+                    <div
+                      key={source.id}
+                      className="p-4 border rounded-lg hover:shadow-md transition-shadow cursor-pointer"
+                    >
+                      <div className="flex items-start justify-between mb-2">
+                        <div>
+                          <h4 className="font-semibold">{source.name}</h4>
+                          <p className="text-xs text-muted-foreground">{source.subType}</p>
+                        </div>
+                        <StatusBadge status={source.status} />
+                      </div>
+                      
+                      {source.description && (
+                        <p className="text-sm text-muted-foreground mb-3">
+                          {source.description}
+                        </p>
+                      )}
+
+                      <div className="grid grid-cols-2 gap-3 text-sm">
+                        <div>
+                          <div className="text-muted-foreground text-xs">Records</div>
+                          <div className="font-medium">{formatNumber(source.recordCount)}</div>
+                        </div>
+                        <div>
+                          <div className="text-muted-foreground text-xs">Errors</div>
+                          <div className={`font-medium ${source.errorCount > 50 ? "text-red-600" : ""}`}>
+                            {source.errorCount}
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-muted-foreground text-xs">Ingestion Rate</div>
+                          <div className="font-medium">{source.ingestionRate || 0}/min</div>
+                        </div>
+                        <div>
+                          <div className="text-muted-foreground text-xs">Last Sync</div>
+                          <div className="font-medium text-xs">
+                            {new Date(source.lastSync).toLocaleTimeString()}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          );
+        })}
+      </div>
+    </div>
   );
 }

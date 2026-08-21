@@ -12,6 +12,11 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     networks:
       - hdop-network
 
@@ -22,8 +27,34 @@ services:
       - "6379:6379"
     volumes:
       - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     networks:
       - hdop-network
+
+  rag:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/rag.Dockerfile
+    container_name: hdop-rag
+    environment:
+      - PYTHONUNBUFFERED=1
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./rag:/app/rag:ro
+      - ./ml:/app/ml:ro
+    networks:
+      - hdop-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8001/health || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
 
   backend:
     build:
@@ -33,13 +64,18 @@ services:
     environment:
       - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/healthcare_db
       - REDIS_URL=redis://redis:6379/0
+      - RAG_SERVICE_URL=http://rag:8001
       - ENV=production
       - JWT_SECRET=supersecretjwtkeychangeinproduction12345
     ports:
       - "8000:8000"
     depends_on:
-      - postgres
-      - redis
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rag:
+        condition: service_started
     networks:
       - hdop-network
 

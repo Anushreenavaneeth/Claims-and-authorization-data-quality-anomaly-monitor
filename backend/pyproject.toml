@@ -1,0 +1,10 @@
+[project]
+name = "hdop-backend"
+version = "0.1.0"
+description = "Healthcare Data Operations Platform — Backend"
+requires-python = ">=3.9"
+dependencies = []
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]

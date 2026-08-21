@@ -14,9 +14,13 @@ class User(Base):
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()), index=True)
     name = Column(String(255), nullable=False)
     email = Column(String(255), unique=True, nullable=False, index=True)
-    password_hash = Column(String(255), nullable=False)
+    phone_number = Column(String(50), nullable=True)
+    password_hash = Column(String(255), nullable=True)
     role = Column(String(50), nullable=False, default=UserRole.WORKER)
     is_active = Column(Boolean, default=True, nullable=False)
+    is_archived = Column(Boolean, default=False, nullable=False)
+    invite_token = Column(String(255), nullable=True, unique=True, index=True)
+    invite_token_expires_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
     updated_at = Column(
         DateTime(timezone=True),
