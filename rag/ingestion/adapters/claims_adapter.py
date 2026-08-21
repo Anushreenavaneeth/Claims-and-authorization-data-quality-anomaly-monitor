@@ -1,495 +1,558 @@
 """
-Claims ML Output → RAG Input Adapter
+Claims ML -> RAG Adapter
 
-Converts the Claims ML model output into the
-common RAG-compatible anomaly structure.
-
-Claims ML format:
+Supports the new Claims ML output schema:
 
 {
-    "record": {...},
-    "anomaly": {...},
-    "detection": {...},
-    "explanation": {
-        "explanation": "...",
-        "likely_cause": "...",
-        "recommended_fix": "..."
+    "project": ...,
+    "schema_version": ...,
+    "record_count": ...,
+    "records": [
+        {
+            "record_id": {...},
+            "entity": {...},
+            "final_assessment": {...},
+            "bayesian": {...},
+            "rule_engine": {...},
+            "ml_evidence": {...}
+        }
+    ]
     }
-}
-
-RAG format:
-
-{
-    "dataset_type": "claims",
-    "record_id": "...",
-    "detection_summary": {...},
-    "rule_based_evidence": [...],
-    "ml_based_evidence": {...},
-    "record_context": {...},
-    "sla": null,
-    "source_explanation": {...}
-}
 """
 
-from typing import Dict, Any, List
+from typing import Any, Dict, List
 
 
 class ClaimsAdapter:
-    """
-    Adapter for converting Claims ML anomalies
-    into the common RAG input structure.
-    """
 
-    # =====================================================
+    DATASET_TYPE = "claims"
+
+    # =========================================================
     # Public API
-    # =====================================================
+    # =========================================================
 
     def adapt_record(
         self,
-        anomaly: Dict[str, Any]
+        record: Dict[str, Any]
     ) -> Dict[str, Any]:
-        """
-        Convert one Claims ML anomaly into
-        the common RAG-compatible structure.
-        """
 
-        if not isinstance(
-            anomaly,
-            dict
-        ):
+        if not isinstance(record, dict):
             raise TypeError(
-                "Claims anomaly must be a dictionary."
+                "Claims record must be a dictionary."
             )
 
-        # -------------------------------------------------
-        # Original Claims sections
-        # -------------------------------------------------
-
-        record = anomaly.get(
-            "record",
+        record_id_data = record.get(
+            "record_id",
             {}
         )
 
-        anomaly_info = anomaly.get(
-            "anomaly",
+        entity = record.get(
+            "entity",
             {}
         )
 
-        detection = anomaly.get(
-            "detection",
+        final_assessment = record.get(
+            "final_assessment",
             {}
         )
 
-        explanation = anomaly.get(
-            "explanation",
+        bayesian = record.get(
+            "bayesian",
             {}
         )
 
-        if not isinstance(
-            record,
-            dict
-        ):
-            record = {}
-
-        if not isinstance(
-            anomaly_info,
-            dict
-        ):
-            anomaly_info = {}
-
-        if not isinstance(
-            detection,
-            dict
-        ):
-            detection = {}
-
-        if not isinstance(
-            explanation,
-            dict
-        ):
-            explanation = {}
-
-        # -------------------------------------------------
-        # Detection sections
-        # -------------------------------------------------
-
-        rule_based = detection.get(
-            "rule_based",
+        rule_engine = record.get(
+            "rule_engine",
             {}
         )
 
-        machine_learning = detection.get(
-            "machine_learning",
+        ml_evidence = record.get(
+            "ml_evidence",
             {}
         )
 
         if not isinstance(
-            rule_based,
+            record_id_data,
             dict
         ):
-            rule_based = {}
+            record_id_data = {}
 
         if not isinstance(
-            machine_learning,
+            entity,
             dict
         ):
-            machine_learning = {}
+            entity = {}
 
-        # =================================================
-        # Record ID
-        # =================================================
+        if not isinstance(
+            final_assessment,
+            dict
+        ):
+            final_assessment = {}
 
-        record_id = (
-            record.get(
-                "plan_id"
-            )
-            or record.get(
-                "record_id"
-            )
-            or anomaly.get(
-                "record_id"
-            )
+        if not isinstance(
+            bayesian,
+            dict
+        ):
+            bayesian = {}
+
+        if not isinstance(
+            rule_engine,
+            dict
+        ):
+            rule_engine = {}
+
+        if not isinstance(
+            ml_evidence,
+            dict
+        ):
+            ml_evidence = {}
+
+        record_id = self._build_record_id(
+            record_id_data
         )
 
-        if record_id is None:
-
-            record_id = "unknown"
-
-        # =================================================
-        # Anomaly Information
-        # =================================================
-
-        final_anomaly = anomaly_info.get(
-            "final_anomaly",
-            machine_learning.get(
-                "detected",
-                False
-            )
-        )
-
-        final_severity = anomaly_info.get(
-            "severity"
-        )
-
-        anomaly_type = anomaly_info.get(
-            "anomaly_type"
-        )
-
-        # =================================================
-        # Rule-Based Evidence
-        # =================================================
-
-        rule_anomaly = rule_based.get(
-            "detected",
-            False
-        )
-
-        rule_name = rule_based.get(
-            "rule_name"
-        )
-
-        rule_reason = rule_based.get(
-            "rule_reason"
-        )
-
-        rule_severity = rule_based.get(
-            "severity"
-        )
-
-        rule_based_evidence = []
-
-        if rule_anomaly:
-
-            rule_entry = {
-                "rule_name": (
-                    rule_name
-                    or "unknown_rule"
-                ),
-                "status": "violated"
-            }
-
-            if rule_reason:
-
-                rule_entry[
-                    "reason"
-                ] = rule_reason
-
-            if rule_severity is not None:
-
-                rule_entry[
-                    "severity"
-                ] = rule_severity
-
-            rule_based_evidence.append(
-                rule_entry
-            )
-
-        # =================================================
-        # ML Evidence
-        # =================================================
-
-        ml_anomaly = machine_learning.get(
-            "detected",
-            False
-        )
-
-        ml_prediction = machine_learning.get(
-            "prediction"
-        )
-
-        ml_anomaly_score = machine_learning.get(
-            "anomaly_score"
-        )
-
-        # -------------------------------------------------
-        # Contributing Features
-        #
-        # Claims model currently provides the important
-        # feature evidence inside the explanation text.
-        #
-        # We DO NOT invent structured feature values.
-        # -------------------------------------------------
-
-        contributing_features = []
-
-        ml_based_evidence = {
-            "model": "Isolation Forest",
-
-            "is_anomaly": ml_anomaly,
-
-            "anomaly_score": (
-                ml_anomaly_score
-            ),
-
-            "contributing_features": (
-                contributing_features
-            )
-        }
-
-        if ml_prediction is not None:
-
-            ml_based_evidence[
-                "prediction"
-            ] = ml_prediction
-
-        # =================================================
-        # Record Context
-        # =================================================
-
-        record_context = {}
-
-        # Preserve all original Claims record fields.
-        #
-        # This is important because the Claims schema
-        # can contain domain-specific fields that may
-        # be useful to RAG/XAI later.
-
-        for key, value in record.items():
-
-            record_context[
-                key
-            ] = value
-
-        # =================================================
-        # Source Explanation
-        # =================================================
-
-        source_explanation = {
-            "explanation": explanation.get(
-                "explanation"
-            ),
-
-            "likely_cause": explanation.get(
-                "likely_cause"
-            ),
-
-            "recommended_fix": explanation.get(
-                "recommended_fix"
-            )
-        }
-
-        # Remove completely missing values.
-
-        source_explanation = {
-            key: value
-            for key, value
-            in source_explanation.items()
-            if value is not None
-        }
-
-        # =================================================
-        # Detection Summary
-        # =================================================
-
-        detection_summary = {
-            "final_anomaly": final_anomaly,
-
-            "final_severity": final_severity,
-
-            # Claims model does not currently provide
-            # a combined risk score.
-            "final_risk_score": None,
-
-            "rule_risk_score": None,
-
-            "ml_risk_score": None,
-
-            "cluster_risk_score": None,
-
-            "ml_anomaly_score": ml_anomaly_score,
-
-            "rule_anomaly": rule_anomaly,
-
-            "ml_anomaly": ml_anomaly,
-
-            "anomaly_type": anomaly_type
-        }
-
-        # =================================================
-        # Final RAG-Compatible Record
-        # =================================================
-
-        adapted_record = {
-            "dataset_type": "claims",
+        return {
+            "dataset_type": self.DATASET_TYPE,
 
             "record_id": record_id,
 
             "detection_summary": (
-                detection_summary
+                self._build_detection_summary(
+                    final_assessment,
+                    bayesian,
+                    rule_engine,
+                    ml_evidence
+                )
             ),
 
             "rule_based_evidence": (
-                rule_based_evidence
+                self._build_rule_evidence(
+                    rule_engine
+                )
             ),
 
             "ml_based_evidence": (
-                ml_based_evidence
+                self._build_ml_evidence(
+                    ml_evidence
+                )
             ),
 
-            "record_context": (
-                record_context
+            "bayesian_evidence": (
+                self._build_bayesian_evidence(
+                    bayesian
+                )
             ),
+
+            "behavioral_evidence": [],
+
+            "record_context": (
+                self._build_record_context(
+                    record_id_data,
+                    entity
+                )
+            ),
+
+            "source_explanation": {},
 
             "sla": None,
 
-            # -------------------------------------------------
-            # Preserve the original Claims ML explanation.
-            # This is important for XAI.
-            # -------------------------------------------------
-
-            "source_explanation": (
-                source_explanation
-            )
+            "raw_ml_record": record
         }
 
-        return adapted_record
-
-    # =====================================================
-    # Adapt Multiple Records
-    # =====================================================
+    # =========================================================
+    # Multiple Records
+    # =========================================================
 
     def adapt(
         self,
-        claims_output: Any
-    ) -> List[Dict[str, Any]]:
-        """
-        Adapt multiple Claims anomalies.
-
-        Supports the original Claims ML structure:
-
-        {
-            "metadata": {...},
-            "dataset_summary": {...},
-            "anomalies": [...]
-        }
-
-        Also supports a direct list of anomalies.
-        """
-
-        # -------------------------------------------------
-        # Claims output object
-        # -------------------------------------------------
+        ml_output: Any
+    ) -> Dict[str, Any]:
 
         if isinstance(
-            claims_output,
+            ml_output,
             dict
         ):
 
-            anomalies = claims_output.get(
-                "anomalies",
+            records = ml_output.get(
+                "records",
                 []
             )
 
-            if not isinstance(
-                anomalies,
-                list
-            ):
-                raise ValueError(
-                    "Claims output contains an "
-                    "invalid 'anomalies' field."
-                )
-
-        # -------------------------------------------------
-        # Direct list
-        # -------------------------------------------------
-
         elif isinstance(
-            claims_output,
+            ml_output,
             list
         ):
 
-            anomalies = claims_output
+            records = ml_output
 
         else:
 
             raise TypeError(
                 "Claims ML output must be "
-                "a dictionary or list."
+                "a JSON object or list."
             )
 
-        # -------------------------------------------------
-        # Adapt records
-        # -------------------------------------------------
+        if not isinstance(
+            records,
+            list
+        ):
+
+            raise ValueError(
+                "Claims output does not contain "
+                "a valid 'records' list."
+            )
 
         adapted_records = []
 
-        for anomaly in anomalies:
+        for record in records:
 
             if not isinstance(
-                anomaly,
+                record,
                 dict
             ):
                 continue
 
             adapted_records.append(
                 self.adapt_record(
-                    anomaly
+                    record
                 )
             )
 
-        return adapted_records
-
-    # =====================================================
-    # Adapt Complete Output
-    # =====================================================
-
-    def adapt_output(
-        self,
-        claims_output: Any
-    ) -> Dict[str, Any]:
-        """
-        Adapt complete Claims ML output and return
-        a normalized RAG ingestion-style object.
-        """
-
-        records = self.adapt(
-            claims_output
-        )
-
         return {
-            "records": records,
-
+            "records": adapted_records,
             "record_count": len(
-                records
+                adapted_records
             )
         }
+
+    # =========================================================
+    # Record ID
+    # =========================================================
+
+    def _build_record_id(
+        self,
+        record_id_data: Dict[str, Any]
+    ) -> str:
+
+        plan_id = record_id_data.get(
+            "plan_id"
+        )
+
+        issuer_id = record_id_data.get(
+            "issuer_id"
+        )
+
+        if plan_id and issuer_id:
+
+            return (
+                f"{plan_id}_{issuer_id}"
+            )
+
+        if plan_id:
+
+            return str(plan_id)
+
+        if issuer_id:
+
+            return str(issuer_id)
+
+        return "unknown"
+
+    # =========================================================
+    # Detection Summary
+    # =========================================================
+
+    def _build_detection_summary(
+        self,
+        final_assessment: Dict[str, Any],
+        bayesian: Dict[str, Any],
+        rule_engine: Dict[str, Any],
+        ml_evidence: Dict[str, Any]
+    ) -> Dict[str, Any]:
+
+        return {
+
+            "final_anomaly":
+                final_assessment.get(
+                    "anomaly"
+                ),
+
+            "final_severity":
+                final_assessment.get(
+                    "severity"
+                ),
+
+            "final_risk_score":
+                final_assessment.get(
+                    "risk_score"
+                ),
+
+            "rule_risk_score":
+                None,
+
+            "ml_risk_score":
+                None,
+
+            "cluster_risk_score":
+                None,
+
+            "bayesian_probability":
+                bayesian.get(
+                    "probability"
+                ),
+
+            "bayesian_anomaly":
+                bayesian.get(
+                    "anomaly"
+                ),
+
+            "ml_anomaly_score":
+                self._first_value(
+                    ml_evidence,
+                    [
+                        "anomaly_score",
+                        "score"
+                    ]
+                ),
+
+            "rule_anomaly":
+                rule_engine.get(
+                    "anomaly"
+                ),
+
+            "ml_anomaly":
+                self._ml_anomaly(
+                    ml_evidence
+                ),
+
+            "anomaly_type":
+                final_assessment.get(
+                    "signals"
+                )
+        }
+
+    # =========================================================
+    # Rule Evidence
+    # =========================================================
+
+    def _build_rule_evidence(
+        self,
+        rule_engine: Dict[str, Any]
+    ) -> List[Dict[str, Any]]:
+
+        if not rule_engine.get(
+            "anomaly",
+            False
+        ):
+
+            return []
+
+        rule_names = str(
+            rule_engine.get(
+                "rule_name",
+                ""
+            )
+        )
+
+        reason = rule_engine.get(
+            "reason"
+        )
+
+        severity = rule_engine.get(
+            "severity"
+        )
+
+        rules = []
+
+        for rule_name in rule_names.split(
+            ";"
+        ):
+
+            rule_name = rule_name.strip()
+
+            if not rule_name:
+                continue
+
+            rules.append(
+                {
+                    "rule_name": rule_name,
+
+                    "status": "ANOMALY",
+
+                    "reason": reason,
+
+                    "severity": severity
+                }
+            )
+
+        return rules
+
+    # =========================================================
+    # ML Evidence
+    # =========================================================
+
+    def _build_ml_evidence(
+        self,
+        ml_evidence: Dict[str, Any]
+    ) -> Dict[str, Any]:
+
+        features = (
+            ml_evidence.get(
+                "features",
+                []
+            )
+        )
+
+        if not isinstance(
+            features,
+            list
+        ):
+
+            features = []
+
+        return {
+
+            "model":
+                ml_evidence.get(
+                    "model"
+                ),
+
+            "is_anomaly":
+                self._ml_anomaly(
+                    ml_evidence
+                ),
+
+            "anomaly_score":
+                self._first_value(
+                    ml_evidence,
+                    [
+                        "anomaly_score",
+                        "score"
+                    ]
+                ),
+
+            "prediction":
+                ml_evidence.get(
+                    "prediction"
+                ),
+
+            "contributing_features":
+                features,
+
+            "evidence_count":
+                ml_evidence.get(
+                    "evidence_count",
+                    0
+                ),
+
+            "severity":
+                ml_evidence.get(
+                    "severity"
+                ),
+
+            "types":
+                ml_evidence.get(
+                    "types"
+                ),
+
+            "details":
+                ml_evidence.get(
+                    "details"
+                ),
+
+            "summary":
+                ml_evidence.get(
+                    "summary"
+                )
+        }
+
+    # =========================================================
+    # Bayesian Evidence
+    # =========================================================
+
+    def _build_bayesian_evidence(
+        self,
+        bayesian: Dict[str, Any]
+    ) -> Dict[str, Any]:
+
+        return {
+
+            "anomaly":
+                bayesian.get(
+                    "anomaly"
+                ),
+
+            "score":
+                bayesian.get(
+                    "score"
+                ),
+
+            "probability":
+                bayesian.get(
+                    "probability"
+                ),
+
+            "threshold":
+                bayesian.get(
+                    "threshold"
+                )
+        }
+
+    # =========================================================
+    # Record Context
+    # =========================================================
+
+    def _build_record_context(
+        self,
+        record_id_data: Dict[str, Any],
+        entity: Dict[str, Any]
+    ) -> Dict[str, Any]:
+
+        context = {}
+
+        for key, value in record_id_data.items():
+
+            if value is not None:
+                context[key] = value
+
+        for key, value in entity.items():
+
+            if value is not None:
+                context[key] = value
+
+        return context
+
+    # =========================================================
+    # Helpers
+    # =========================================================
+
+    @staticmethod
+    def _first_value(
+        data: Dict[str, Any],
+        keys: List[str]
+    ):
+
+        for key in keys:
+
+            value = data.get(
+                key
+            )
+
+            if value is not None:
+                return value
+
+        return None
+
+    @staticmethod
+    def _ml_anomaly(
+        ml_evidence: Dict[str, Any]
+    ):
+
+        value = ml_evidence.get(
+            "anomaly"
+        )
+
+        if value is not None:
+            return value
+
+        return False

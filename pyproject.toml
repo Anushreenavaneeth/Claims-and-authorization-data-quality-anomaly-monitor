@@ -1,0 +1,7 @@
+[project]
+name = "claims-and-authorization-data-quality-anomaly-monitor"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = []

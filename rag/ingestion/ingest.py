@@ -1,280 +1,342 @@
 """
-Main RAG input ingestion pipeline.
+Normalize ML -> RAG records.
 
-Flow:
+The normalizer preserves evidence supplied by the ML pipeline.
 
-ML JSON
-   ↓
-Load
-   ↓
-Validate
-   ↓
-Normalize
-   ↓
-Clean RAG Input
+It does NOT:
+- invent anomaly scores
+- invent ML features
+- invent root causes
+- invent Bayesian values
 """
 
-import json
-from pathlib import Path
-from typing import Any, Dict, Union
-
-from .validator import RAGInputValidator
-from .normalizer import RAGInputNormalizer
+from typing import Any, Dict, List
 
 
-class RAGIngestion:
-    """
-    Main ingestion component for ML model output.
-    """
+class RAGInputNormalizer:
 
-    def __init__(self):
-
-        self.validator = (
-            RAGInputValidator()
-        )
-
-        self.normalizer = (
-            RAGInputNormalizer()
-        )
-
-    # =====================================================
-    # Load JSON
-    # =====================================================
-
-    def load_json(
-        self,
-        file_path: Union[str, Path]
-    ) -> Any:
-        """
-        Load ML/RAG input JSON from disk.
-        """
-
-        file_path = Path(
-            file_path
-        )
-
-        if not file_path.exists():
-
-            raise FileNotFoundError(
-                f"RAG input file not found: "
-                f"{file_path}"
-            )
-
-        if file_path.suffix.lower() != ".json":
-
-            raise ValueError(
-                "RAG input file must be a JSON file."
-            )
-
-        with open(
-            file_path,
-            "r",
-            encoding="utf-8"
-        ) as file:
-
-            try:
-
-                data = json.load(
-                    file
-                )
-
-            except json.JSONDecodeError as exc:
-
-                raise ValueError(
-                    f"Invalid JSON file: "
-                    f"{file_path}"
-                ) from exc
-
-        return data
-
-    # =====================================================
-    # Validate
-    # =====================================================
-
-    def validate(
-        self,
-        rag_input: Any
-    ) -> Dict[str, Any]:
-        """
-        Validate raw ML output.
-        """
-
-        return self.validator.validate(
-            rag_input
-        )
-
-    # =====================================================
-    # Normalize
-    # =====================================================
+    # =========================================================
+    # Normalize Complete Input
+    # =========================================================
 
     def normalize(
         self,
-        rag_input: Any
+        rag_input: List[Dict[str, Any]]
     ) -> Dict[str, Any]:
-        """
-        Normalize validated ML output.
-        """
 
-        return self.normalizer.normalize(
-            rag_input
-        )
+        if not isinstance(
+            rag_input,
+            list
+        ):
 
-    # =====================================================
-    # Complete Ingestion
-    # =====================================================
+            raise TypeError(
+                "RAG input must be a list."
+            )
 
-    def ingest(
+        normalized_records = []
+
+        for record in rag_input:
+
+            normalized_records.append(
+                self._normalize_record(
+                    record
+                )
+            )
+
+        return {
+            "records": normalized_records,
+            "record_count": len(
+                normalized_records
+            )
+        }
+
+    # =========================================================
+    # Normalize One Record
+    # =========================================================
+
+    def _normalize_record(
         self,
-        file_path: Union[str, Path]
+        record: Dict[str, Any]
     ) -> Dict[str, Any]:
-        """
-        Execute the complete ingestion pipeline.
 
-        ML JSON
-           ↓
-        Load
-           ↓
-        Validate
-           ↓
-        Normalize
-           ↓
-        Return structured RAG input
-        """
-
-        print(
-            "=" * 60
+        dataset_type = record.get(
+            "dataset_type"
         )
 
-        print(
-            "RAG INPUT INGESTION"
-        )
-
-        print(
-            "=" * 60
-        )
-
-        # -------------------------------------------------
-        # Step 1: Load
-        # -------------------------------------------------
-
-        print(
-            "\n[1/3] Loading ML output..."
-        )
-
-        raw_input = self.load_json(
-            file_path
-        )
-
-        print(
-            f"Records loaded: "
-            f"{len(raw_input) if isinstance(raw_input, list) else 'unknown'}"
-        )
-
-        # -------------------------------------------------
-        # Step 2: Validate
-        # -------------------------------------------------
-
-        print(
-            "\n[2/3] Validating ML output..."
-        )
-
-        validation_result = (
-            self.validate(
-                raw_input
+        record_id = str(
+            record.get(
+                "record_id",
+                "unknown"
             )
         )
 
-        if not validation_result[
-            "valid"
-        ]:
+        detection = record.get(
+            "detection_summary",
+            {}
+        )
 
-            print(
-                "Validation failed."
+        rule_evidence = record.get(
+            "rule_based_evidence",
+            []
+        )
+
+        ml_evidence = record.get(
+            "ml_based_evidence"
+        )
+
+        behavior_evidence = record.get(
+            "behavior_based_evidence",
+            {}
+        )
+
+        bayesian_evidence = record.get(
+            "bayesian_evidence",
+            {}
+        )
+
+        context = record.get(
+            "record_context",
+            {}
+        )
+
+        sla = record.get(
+            "sla"
+        )
+
+        source_explanation = record.get(
+            "source_explanation",
+            {}
+        )
+
+        # -----------------------------------------------------
+        # Preserve complete source evidence
+        # -----------------------------------------------------
+
+        source_evidence = record.get(
+            "source_evidence",
+            {}
+        )
+
+        return {
+
+            "dataset_type":
+                dataset_type,
+
+            "record_id":
+                record_id,
+
+            "detection_summary":
+                detection,
+
+            "rule_based_evidence":
+                rule_evidence,
+
+            "ml_based_evidence":
+                self._normalize_ml_evidence(
+                    ml_evidence
+                ),
+
+            "behavior_based_evidence":
+                behavior_evidence,
+
+            "bayesian_evidence":
+                bayesian_evidence,
+
+            "record_context":
+                context,
+
+            "sla":
+                sla,
+
+            "source_explanation":
+                source_explanation,
+
+            "source_evidence":
+                source_evidence
+        }
+
+    # =========================================================
+    # Normalize ML Evidence
+    # =========================================================
+
+    def _normalize_ml_evidence(
+        self,
+        ml_evidence: Any
+    ):
+
+        if ml_evidence is None:
+
+            return None
+
+        if not isinstance(
+            ml_evidence,
+            dict
+        ):
+
+            raise TypeError(
+                "ml_based_evidence must be "
+                "an object or null."
             )
 
-            for error in validation_result[
-                "errors"
-            ]:
+        return dict(
+            ml_evidence
+        )
 
-                print(
-                    f"  - {error}"
+    # =========================================================
+    # Evidence Summary
+    # =========================================================
+
+    def extract_evidence_summary(
+        self,
+        normalized_record: Dict[str, Any]
+    ) -> Dict[str, Any]:
+
+        detection = normalized_record.get(
+            "detection_summary",
+            {}
+        )
+
+        rule_evidence = normalized_record.get(
+            "rule_based_evidence",
+            []
+        )
+
+        ml_evidence = normalized_record.get(
+            "ml_based_evidence"
+        )
+
+        behavior_evidence = normalized_record.get(
+            "behavior_based_evidence",
+            {}
+        )
+
+        bayesian_evidence = normalized_record.get(
+            "bayesian_evidence",
+            {}
+        )
+
+        # -----------------------------------------------------
+        # Rule names
+        # -----------------------------------------------------
+
+        rule_names = []
+
+        for rule in rule_evidence:
+
+            if not isinstance(
+                rule,
+                dict
+            ):
+                continue
+
+            name = rule.get(
+                "rule_name"
+            )
+
+            if name:
+
+                rule_names.append(
+                    str(name)
                 )
 
-            raise ValueError(
-                "RAG input validation failed."
+        # -----------------------------------------------------
+        # ML features
+        # -----------------------------------------------------
+
+        ml_features = []
+
+        if isinstance(
+            ml_evidence,
+            dict
+        ):
+
+            features = ml_evidence.get(
+                "contributing_features",
+                []
             )
 
-        print(
-            "Validation successful."
-        )
+            if isinstance(
+                features,
+                list
+            ):
 
-        print(
-            f"Validated records: "
-            f"{validation_result['record_count']}"
-        )
+                for feature in features:
 
-        # -------------------------------------------------
-        # Step 3: Normalize
-        # -------------------------------------------------
+                    if isinstance(
+                        feature,
+                        dict
+                    ):
 
-        print(
-            "\n[3/3] Normalizing records..."
-        )
+                        name = feature.get(
+                            "feature"
+                        )
 
-        normalized = (
-            self.normalize(
-                raw_input
-            )
-        )
+                        if name:
 
-        print(
-            f"Normalized records: "
-            f"{normalized['record_count']}"
-        )
+                            ml_features.append(
+                                str(name)
+                            )
 
-        # -------------------------------------------------
-        # Final result
-        # -------------------------------------------------
+                    elif isinstance(
+                        feature,
+                        str
+                    ):
 
-        print(
-            "\n"
-            + "=" * 60
-        )
+                        ml_features.append(
+                            feature
+                        )
 
-        print(
-            "RAG INGESTION COMPLETED"
-        )
+        return {
 
-        print(
-            "=" * 60
-        )
+            "rule_anomaly":
+                detection.get(
+                    "rule_anomaly"
+                ),
 
-        return normalized
+            "ml_anomaly":
+                detection.get(
+                    "ml_anomaly"
+                ),
 
+            "behavior_anomaly":
+                detection.get(
+                    "behavior_anomaly"
+                ),
 
-# =========================================================
-# Simple command-line test
-# =========================================================
+            "bayesian_anomaly":
+                detection.get(
+                    "bayesian_anomaly"
+                ),
 
-if __name__ == "__main__":
+            "ml_evidence_available":
+                ml_evidence is not None,
 
-    input_file = (
-        "authorization_anomalies_for_rag.json"
-    )
+            "rule_names":
+                rule_names,
 
-    ingestion = RAGIngestion()
+            "ml_features":
+                ml_features,
 
-    result = ingestion.ingest(
-        input_file
-    )
+            "bayesian_probability":
+                bayesian_evidence.get(
+                    "probability"
+                )
+                if isinstance(
+                    bayesian_evidence,
+                    dict
+                )
+                else None,
 
-    print(
-        "\nFirst normalized record:"
-    )
+            "bayesian_score":
+                bayesian_evidence.get(
+                    "score"
+                )
+                if isinstance(
+                    bayesian_evidence,
+                    dict
+                )
+                else None,
 
-    print(
-        json.dumps(
-            result["records"][0],
-            indent=2
-        )
-    )
+            "behavior_evidence":
+                behavior_evidence
+        }
