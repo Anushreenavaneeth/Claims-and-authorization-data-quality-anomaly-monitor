@@ -1,0 +1,54 @@
+{
+  "_comment": "SLA Engine Configuration — edit thresholds here without touching code",
+  "schema_version": "1.0",
+
+  "severity_weights": {
+    "NONE":     0,
+    "LOW":      1,
+    "MEDIUM":   2,
+    "HIGH":     3,
+    "CRITICAL": 4
+  },
+
+  "risk_level_thresholds": {
+    "LOW":      { "min": 0,  "max": 30 },
+    "MEDIUM":   { "min": 30, "max": 60 },
+    "HIGH":     { "min": 60, "max": 80 },
+    "CRITICAL": { "min": 80, "max": 100 }
+  },
+
+  "sla_scoring_weights": {
+    "anomaly_workload": 0.50,
+    "severity_burden":  0.30,
+    "signal_burden":    0.20
+  },
+
+  "record_scoring_weights": {
+    "anomaly_existence": 0.50,
+    "severity":          0.30,
+    "signal_count":      0.20
+  },
+
+  "signal_cap": 3,
+
+  "priority_map": {
+    "CRITICAL": { "priority": "P1", "response_time": "1 hour",  "escalation_required": true  },
+    "HIGH":     { "priority": "P2", "response_time": "4 hours", "escalation_required": true  },
+    "MEDIUM":   { "priority": "P3", "response_time": "24 hours","escalation_required": false },
+    "LOW":      { "priority": "P4", "response_time": "72 hours","escalation_required": false }
+  },
+
+  "sla_status_thresholds": {
+    "BREACHED":  80,
+    "AT_RISK":   60,
+    "ELEVATED":  30,
+    "NORMAL":     0
+  },
+
+  "recommendations": {
+    "LOW":      { "action": "Continue Normal Monitoring",  "text": "Continue standard processing and routine monitoring. No immediate SLA intervention is currently required." },
+    "MEDIUM":   { "action": "Prioritized Review",          "text": "Review the affected workload within the defined processing window and prioritize unresolved anomalies before they accumulate into a processing backlog." },
+    "HIGH":     { "action": "Immediate Prioritization",    "text": "Prioritize the affected records for resolution and assign them to the appropriate operations queue to reduce the risk of processing delays and potential SLA breach." },
+    "CRITICAL": { "action": "Escalation Required",         "text": "Immediately escalate the affected workload, prioritize critical anomalies, and allocate additional operational resources to prevent an SLA breach." }
+  }
+}

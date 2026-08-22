@@ -192,7 +192,7 @@ export default function DataSources() {
 
             {/* Stats row */}
             <div className="grid grid-cols-4 divide-x"
-                 style={{ borderBottom: '1px solid rgba(255,255,255,0.06)', divideBorderColor: 'rgba(255,255,255,0.06)' }}>
+                 style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
               {[
                 { label: 'Total',    value: result.total_records,   color: '#94a3b8' },
                 { label: 'Valid',    value: result.valid_records,    color: '#4ade80' },

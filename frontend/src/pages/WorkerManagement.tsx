@@ -1,7 +1,7 @@
 import { useState, useEffect, FormEvent } from 'react';
 import DashboardShell from '../components/DashboardShell';
 import api from '../services/api';
-import { UserPlus, Trash2, Loader2, CheckCircle2, AlertCircle, Eye, EyeOff } from 'lucide-react';
+import { UserPlus, Trash2, Loader2, CheckCircle2, AlertCircle, Eye, EyeOff, Users } from 'lucide-react';
 
 interface Worker {
   id: string;
