@@ -54,7 +54,6 @@ ENV/
 # GENERATED OUTPUTS
 # =========================================================
 
-outputs/*.json
 outputs/*.csv
 outputs/*.xlsx
 
@@ -103,4 +102,3 @@ htmlcov/
 # LOCAL MODEL / EXPERIMENT FILES
 # =========================================================
 
-*.pkl
