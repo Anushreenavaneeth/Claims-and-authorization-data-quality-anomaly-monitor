@@ -1,15 +1,74 @@
 # pipeline/output_builder.py
 
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 
 
 class OutputBuilder:
     """
-    Builds the final anomaly JSON output.
+    Builds the final CTS_V2 anomaly output.
 
-    Internal pipeline results are converted into the
-    compact output contract required by the project.
+    Output format:
+
+    {
+        "record_id": {
+            "plan_id": "...",
+            "issuer_id": "..."
+        },
+
+        "entity": {
+            "state": "...",
+            "issuer_name": "...",
+            "plan_type": "...",
+            "metal_level": "...",
+            "exchange_type": "...",
+            "individual_or_shop": "..."
+        },
+
+        "final_assessment": {
+            "anomaly": true,
+            "severity": "MEDIUM",
+            "signal_count": 1,
+            "signals": "Rule"
+        },
+
+        "bayesian": {
+            "anomaly": false,
+            "score": 0.0,
+            "probability": 0.0,
+            "threshold": 0.0
+        },
+
+        "rule_engine": {
+            "anomaly": true,
+            "rule_count": 1,
+            "rule_name": "...",
+            "reason": "...",
+            "severity": "MEDIUM"
+        },
+
+        "ml_evidence": {
+            "evidence_count": 0,
+            "severity": "",
+            "types": "",
+            "features": "",
+            "details": "",
+            "summary": ""
+        }
+    }
+
+    Normal records return None.
     """
+
+    PROJECT_NAME = (
+        "TC-PUF Claims and Authorization "
+        "Data Quality Anomaly Monitor"
+    )
+
+    SCHEMA_VERSION = "1.0"
+
+    # ==========================================================
+    # INITIALIZATION
+    # ==========================================================
 
     def __init__(
         self,
@@ -17,15 +76,15 @@ class OutputBuilder:
     ):
         self.anomaly_threshold = anomaly_threshold
 
-    # ==================================================
+    # ==========================================================
     # SAFE FLOAT
-    # ==================================================
+    # ==========================================================
 
     @staticmethod
     def _safe_float(
         value,
-        default=0.0,
-    ):
+        default: float = 0.0,
+    ) -> float:
 
         try:
 
@@ -41,15 +100,15 @@ class OutputBuilder:
 
             return default
 
-    # ==================================================
+    # ==========================================================
     # SAFE BOOL
-    # ==================================================
+    # ==========================================================
 
     @staticmethod
     def _safe_bool(
         value,
-        default=False,
-    ):
+        default: bool = False,
+    ) -> bool:
 
         if value is None:
             return default
@@ -59,63 +118,100 @@ class OutputBuilder:
 
         if isinstance(value, str):
 
-            return value.strip().lower() in {
-                "true",
-                "1",
-                "yes",
-                "y",
-            }
+            return (
+                value.strip().lower()
+                in {
+                    "true",
+                    "1",
+                    "yes",
+                    "y",
+                }
+            )
 
         return bool(value)
 
-    # ==================================================
+    # ==========================================================
+    # SAFE STRING
+    # ==========================================================
+
+    @staticmethod
+    def _safe_string(
+        value,
+        default: str = "",
+    ) -> str:
+
+        if value is None:
+            return default
+
+        return str(value)
+
+    # ==========================================================
     # CLEAN RULE CAUSES
-    # ==================================================
+    # ==========================================================
 
     @staticmethod
     def _clean_rule_causes(
-        causes: List[Dict[str, Any]],
+        causes: Optional[
+            List[Dict[str, Any]]
+        ],
     ) -> List[Dict[str, Any]]:
 
         cleaned = []
 
         for cause in causes or []:
 
+            if not isinstance(
+                cause,
+                dict,
+            ):
+                continue
+
             cleaned.append(
                 {
-                    "cause": cause.get(
-                        "cause",
-                        "unknown",
-                    ),
+                    "cause":
+                        cause.get(
+                            "cause",
+                            "unknown",
+                        ),
 
-                    "description": cause.get(
-                        "description",
-                        "",
-                    ),
+                    "description":
+                        cause.get(
+                            "description",
+                            "",
+                        ),
                 }
             )
 
         return cleaned
 
-    # ==================================================
+    # ==========================================================
     # CLEAN BAYESIAN CAUSES
-    # ==================================================
+    # ==========================================================
 
     @staticmethod
     def _clean_bayesian_causes(
-        causes: List[Dict[str, Any]],
+        causes: Optional[
+            List[Dict[str, Any]]
+        ],
     ) -> List[Dict[str, Any]]:
 
         cleaned = []
 
         for cause in causes or []:
 
+            if not isinstance(
+                cause,
+                dict,
+            ):
+                continue
+
             cleaned.append(
                 {
-                    "cause": cause.get(
-                        "cause",
-                        "unknown",
-                    ),
+                    "cause":
+                        cause.get(
+                            "cause",
+                            "unknown",
+                        ),
 
                     "probability_given_anomaly":
                         round(
@@ -154,264 +250,902 @@ class OutputBuilder:
 
         return cleaned
 
-    # ==================================================
+    # ==========================================================
+    # EXTRACT ENTITY
+    # ==========================================================
+
+    @staticmethod
+    def _build_entity(
+        record_data: Optional[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+
+        record_data = (
+            record_data
+            if isinstance(
+                record_data,
+                dict,
+            )
+            else {}
+        )
+
+        return {
+            "state":
+                record_data.get(
+                    "state",
+                    record_data.get(
+                        "State",
+                        "",
+                    ),
+                ),
+
+            "issuer_name":
+                record_data.get(
+                    "issuer_name",
+                    record_data.get(
+                        "Issuer_Name",
+                        "",
+                    ),
+                ),
+
+            "plan_type":
+                record_data.get(
+                    "plan_type",
+                    record_data.get(
+                        "Plan_Type",
+                        "",
+                    ),
+                ),
+
+            "metal_level":
+                record_data.get(
+                    "metal_level",
+                    record_data.get(
+                        "Metal_Level",
+                        "",
+                    ),
+                ),
+
+            "exchange_type":
+                record_data.get(
+                    "exchange_type",
+                    record_data.get(
+                        "Exchange_Type",
+                        "",
+                    ),
+                ),
+
+            "individual_or_shop":
+                record_data.get(
+                    "individual_or_shop",
+                    record_data.get(
+                        "Individual_or_Shop",
+                        "",
+                    ),
+                ),
+        }
+
+    # ==========================================================
+    # BUILD RECORD ID
+    # ==========================================================
+
+    @staticmethod
+    def _build_record_id(
+        record_id: Any,
+        record_data: Optional[
+            Dict[str, Any]
+        ],
+    ) -> Dict[str, Any]:
+
+        record_data = (
+            record_data
+            if isinstance(
+                record_data,
+                dict,
+            )
+            else {}
+        )
+
+        # If record_id is already a dictionary
+        if isinstance(
+            record_id,
+            dict,
+        ):
+
+            return {
+                "plan_id":
+                    record_id.get(
+                        "plan_id",
+                        record_id.get(
+                            "Plan_ID",
+                            "",
+                        ),
+                    ),
+
+                "issuer_id":
+                    record_id.get(
+                        "issuer_id",
+                        record_id.get(
+                            "Issuer_ID",
+                            "",
+                        ),
+                    ),
+            }
+
+        # Otherwise try the row
+        plan_id = record_data.get(
+            "plan_id",
+            record_data.get(
+                "Plan_ID",
+                "",
+            ),
+        )
+
+        issuer_id = record_data.get(
+            "issuer_id",
+            record_data.get(
+                "Issuer_ID",
+                "",
+            ),
+        )
+
+        return {
+            "plan_id":
+                plan_id
+                if plan_id
+                else record_id,
+
+            "issuer_id":
+                issuer_id,
+        }
+
+    # ==========================================================
+    # EXTRACT ML EVIDENCE
+    # ==========================================================
+
+    @staticmethod
+    def _build_ml_evidence(
+        evidence: Dict[str, Any],
+    ) -> Dict[str, Any]:
+
+        ml_evidence = evidence.get(
+            "ml_evidence",
+            {},
+        )
+
+        if not isinstance(
+            ml_evidence,
+            dict,
+        ):
+
+            ml_evidence = {}
+
+        return {
+            "evidence_count":
+                ml_evidence.get(
+                    "evidence_count",
+                    0,
+                ),
+
+            "severity":
+                ml_evidence.get(
+                    "severity",
+                    "",
+                ),
+
+            "types":
+                ml_evidence.get(
+                    "types",
+                    "",
+                ),
+
+            "features":
+                ml_evidence.get(
+                    "features",
+                    "",
+                ),
+
+            "details":
+                ml_evidence.get(
+                    "details",
+                    "",
+                ),
+
+            "summary":
+                ml_evidence.get(
+                    "summary",
+                    "",
+                ),
+        }
+
+    # ==========================================================
+    # EXTRACT BAYESIAN RESULT
+    # ==========================================================
+
+    def _build_bayesian(
+        self,
+        evidence: Dict[str, Any],
+        bayesian_root_causes:
+            List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+
+        bayesian_data = evidence.get(
+            "bayesian",
+            {},
+        )
+
+        if not isinstance(
+            bayesian_data,
+            dict,
+        ):
+
+            bayesian_data = {}
+
+        anomaly = self._safe_bool(
+            bayesian_data.get(
+                "anomaly",
+                False,
+            )
+        )
+
+        probability = (
+            self._safe_float(
+                bayesian_data.get(
+                    "probability",
+                    0.0,
+                )
+            )
+        )
+
+        score = (
+            self._safe_float(
+                bayesian_data.get(
+                    "score",
+                    0.0,
+                )
+            )
+        )
+
+        threshold = (
+            self._safe_float(
+                bayesian_data.get(
+                    "threshold",
+                    0.0,
+                )
+            )
+        )
+
+        # If explicit Bayesian root causes
+        # exist, Bayesian evidence is present.
+        if (
+            bayesian_root_causes
+            and not anomaly
+        ):
+            anomaly = True
+
+        return {
+            "anomaly":
+                anomaly,
+
+            "score":
+                score,
+
+            "probability":
+                probability,
+
+            "threshold":
+                threshold,
+        }
+
+    # ==========================================================
+    # EXTRACT RULE ENGINE RESULT
+    # ==========================================================
+
+    def _build_rule_engine(
+        self,
+        evidence: Dict[str, Any],
+        rule_root_causes:
+            List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+
+        rule_data = evidence.get(
+            "rule_engine",
+            evidence.get(
+                "rule_based",
+                {},
+            ),
+        )
+
+        if not isinstance(
+            rule_data,
+            dict,
+        ):
+
+            rule_data = {}
+
+        anomaly = self._safe_bool(
+            rule_data.get(
+                "anomaly",
+                False,
+            )
+        )
+
+        if (
+            rule_root_causes
+            and not anomaly
+        ):
+            anomaly = True
+
+        rule_names = []
+        reasons = []
+
+        for cause in (
+            rule_root_causes or []
+        ):
+
+            if not isinstance(
+                cause,
+                dict,
+            ):
+                continue
+
+            rule_name = cause.get(
+                "rule",
+                cause.get(
+                    "cause",
+                    "",
+                ),
+            )
+
+            reason = cause.get(
+                "description",
+                cause.get(
+                    "reason",
+                    "",
+                ),
+            )
+
+            if rule_name:
+                rule_names.append(
+                    str(rule_name)
+                )
+
+            if reason:
+                reasons.append(
+                    str(reason)
+                )
+
+        rule_name = (
+            rule_data.get(
+                "rule_name",
+                "",
+            )
+        )
+
+        reason = (
+            rule_data.get(
+                "reason",
+                "",
+            )
+        )
+
+        if (
+            not rule_name
+            and rule_names
+        ):
+
+            rule_name = ";".join(
+                rule_names
+            )
+
+        if (
+            not reason
+            and reasons
+        ):
+
+            reason = ";".join(
+                reasons
+            )
+
+        rule_count = (
+            rule_data.get(
+                "rule_count",
+                len(rule_names),
+            )
+        )
+
+        severity = (
+            rule_data.get(
+                "severity",
+                "NONE",
+            )
+        )
+
+        return {
+            "anomaly":
+                anomaly,
+
+            "rule_count":
+                rule_count,
+
+            "rule_name":
+                rule_name,
+
+            "reason":
+                reason,
+
+            "severity":
+                severity,
+        }
+
+    # ==========================================================
+    # FINAL SEVERITY
+    # ==========================================================
+
+    @staticmethod
+    def _calculate_severity(
+        evidence: Dict[str, Any],
+        rule_result: Dict[str, Any],
+        bayesian_result: Dict[str, Any],
+        ml_result: Dict[str, Any],
+    ) -> str:
+
+        severities = []
+
+        rule_severity = (
+            rule_result.get(
+                "severity",
+                "",
+            )
+        )
+
+        if rule_severity:
+            severities.append(
+                str(rule_severity).upper()
+            )
+
+        ml_severity = (
+            ml_result.get(
+                "severity",
+                "",
+            )
+        )
+
+        if ml_severity:
+            severities.append(
+                str(ml_severity).upper()
+            )
+
+        for severity in (
+            "HIGH",
+            "MEDIUM",
+            "LOW",
+        ):
+
+            if severity in severities:
+                return severity
+
+        # Fallback
+        if (
+            bayesian_result.get(
+                "anomaly",
+                False,
+            )
+        ):
+            return "MEDIUM"
+
+        return "LOW"
+
+    # ==========================================================
     # BUILD ONE RECORD
-    # ==================================================
+    # ==========================================================
 
     def build_record(
         self,
         record_id: Any,
-        evidence: Dict[str, Any],
-        rule_root_causes: List[Dict[str, Any]],
-        bayesian_root_causes: List[Dict[str, Any]],
-        sla_result: Dict[str, Any] = None,
-    ) -> Dict[str, Any]:
+        evidence: Optional[
+            Dict[str, Any]
+        ] = None,
+        rule_root_causes:
+            Optional[
+                List[Dict[str, Any]]
+            ] = None,
+        bayesian_root_causes:
+            Optional[
+                List[Dict[str, Any]]
+            ] = None,
+        sla_result:
+            Optional[
+                Dict[str, Any]
+            ] = None,
+        record_data:
+            Optional[
+                Dict[str, Any]
+            ] = None,
 
-        sla_result = sla_result or {}
+        # Compatibility with the current
+        # anomaly_pipeline implementation.
+        fusion_result:
+            Optional[
+                Dict[str, Any]
+            ] = None,
 
-        # ----------------------------------------------
+        isolation_result:
+            Optional[
+                Dict[str, Any]
+            ] = None,
+    ) -> Optional[Dict[str, Any]]:
+
+        evidence = (
+            evidence
+            if isinstance(
+                evidence,
+                dict,
+            )
+            else {}
+        )
+
+        rule_root_causes = (
+            rule_root_causes
+            or []
+        )
+
+        bayesian_root_causes = (
+            bayesian_root_causes
+            or []
+        )
+
+        sla_result = (
+            sla_result
+            if isinstance(
+                sla_result,
+                dict,
+            )
+            else {}
+        )
+
+        record_data = (
+            record_data
+            if isinstance(
+                record_data,
+                dict,
+            )
+            else {}
+        )
+
+        # ------------------------------------------------------
+        # Compatibility: merge supplied results
+        # ------------------------------------------------------
+
+        if (
+            fusion_result
+            and isinstance(
+                fusion_result,
+                dict,
+            )
+        ):
+
+            evidence["fusion"] = (
+                fusion_result
+            )
+
+        if (
+            isolation_result
+            and isinstance(
+                isolation_result,
+                dict,
+            )
+        ):
+
+            evidence[
+                "isolation_forest"
+            ] = isolation_result
+
+        # ------------------------------------------------------
+        # Rule result
+        # ------------------------------------------------------
+
+        rule_result = (
+            self._build_rule_engine(
+                evidence,
+                rule_root_causes,
+            )
+        )
+
+        # ------------------------------------------------------
+        # Bayesian result
+        # ------------------------------------------------------
+
+        bayesian_result = (
+            self._build_bayesian(
+                evidence,
+                bayesian_root_causes,
+            )
+        )
+
+        # ------------------------------------------------------
+        # ML evidence
+        # ------------------------------------------------------
+
+        ml_result = (
+            self._build_ml_evidence(
+                evidence
+            )
+        )
+
+        # ------------------------------------------------------
         # Detection sources
-        # ----------------------------------------------
+        # ------------------------------------------------------
 
-        rule_based = self._safe_bool(
-            evidence.get(
-                "rule_based",
-                {}
-            ).get(
-                "anomaly",
-                False,
+        isolation = evidence.get(
+            "isolation_forest",
+            {},
+        )
+
+        clustering = evidence.get(
+            "clustering",
+            {},
+        )
+
+        behavioral = evidence.get(
+            "behavioral",
+            {},
+        )
+
+        isolation_anomaly = (
+            self._safe_bool(
+                isolation.get(
+                    "anomaly",
+                    isolation.get(
+                        "is_anomaly",
+                        False,
+                    ),
+                )
             )
-        )
-
-        isolation_forest = self._safe_bool(
-            evidence.get(
-                "isolation_forest",
-                {}
-            ).get(
-                "anomaly",
-                False,
+            if isinstance(
+                isolation,
+                dict,
             )
+            else False
         )
 
-        clustering = self._safe_bool(
-            evidence.get(
-                "clustering",
-                {}
-            ).get(
-                "anomaly",
-                False,
+        clustering_anomaly = (
+            self._safe_bool(
+                clustering.get(
+                    "anomaly",
+                    clustering.get(
+                        "is_anomaly",
+                        False,
+                    ),
+                )
             )
-        )
-
-        behavioral = self._safe_bool(
-            evidence.get(
-                "behavioral",
-                {}
-            ).get(
-                "anomaly",
-                False,
+            if isinstance(
+                clustering,
+                dict,
             )
+            else False
         )
 
-        # ----------------------------------------------
-        # Bayesian evidence
-        # ----------------------------------------------
-
-        bayesian = (
-            len(
-                bayesian_root_causes or []
+        behavioral_anomaly = (
+            self._safe_bool(
+                behavioral.get(
+                    "anomaly",
+                    behavioral.get(
+                        "is_anomaly",
+                        False,
+                    ),
+                )
             )
-            > 0
-        )
-
-        # ----------------------------------------------
-        # ML anomaly score
-        # ----------------------------------------------
-
-        ml_anomaly_score = self._safe_float(
-            evidence.get(
-                "isolation_forest",
-                {}
-            ).get(
-                "anomaly_score",
-                0.0,
+            if isinstance(
+                behavioral,
+                dict,
             )
+            else False
         )
 
-        # ----------------------------------------------
-        # Fusion
-        # ----------------------------------------------
-
-        fusion = evidence.get(
-            "fusion",
-            {}
+        rule_anomaly = (
+            rule_result["anomaly"]
         )
 
-        fusion_score = self._safe_float(
-            fusion.get(
-                "fusion_score",
-                0.0,
-            )
+        bayesian_anomaly = (
+            bayesian_result["anomaly"]
         )
 
-        multi_source = self._safe_bool(
-            fusion.get(
-                "multi_source_anomaly",
-                False,
-            )
-        )
-
-        # ----------------------------------------------
-        # SLA
-        # ----------------------------------------------
-
-        sla_risk = self._safe_bool(
-            sla_result.get(
-                "sla_risk",
-                False,
-            )
-        )
-
-        # ----------------------------------------------
+        # ------------------------------------------------------
         # Final anomaly decision
-        # ----------------------------------------------
+        # ------------------------------------------------------
 
         anomaly_detected = (
-            rule_based
-            or isolation_forest
-            or clustering
-            or behavioral
-            or bayesian
+            rule_anomaly
+            or isolation_anomaly
+            or clustering_anomaly
+            or behavioral_anomaly
+            or bayesian_anomaly
         )
 
-        # SLA alone should not create an anomaly.
-        #
-        # It is supporting pipeline-risk information.
+        # Fusion can also confirm an anomaly.
+        fusion = evidence.get(
+            "fusion",
+            {},
+        )
 
-        if not anomaly_detected:
+        if isinstance(
+            fusion,
+            dict,
+        ):
 
             anomaly_detected = (
-                multi_source
-                or fusion_score
-                >= self.anomaly_threshold
-            )
-
-        # ----------------------------------------------
-        # Clean causes
-        # ----------------------------------------------
-
-        cleaned_rule_causes = (
-            self._clean_rule_causes(
-                rule_root_causes
-            )
-        )
-
-        cleaned_bayesian_causes = (
-            self._clean_bayesian_causes(
-                bayesian_root_causes
-            )
-        )
-
-        # ----------------------------------------------
-        # RAG context
-        # ----------------------------------------------
-
-        context_parts = []
-
-        for cause in cleaned_rule_causes:
-
-            description = cause.get(
-                "description",
-                "",
-            )
-
-            if description:
-                context_parts.append(
-                    description
-                )
-
-        for cause in cleaned_bayesian_causes:
-
-            context_parts.append(
-                "Bayesian evidence indicates "
-                f"{cause['cause']} with probability "
-                f"{cause['probability_given_anomaly']:.4f}."
-            )
-
-        if sla_risk:
-
-            breach_probability = (
-                self._safe_float(
-                    sla_result.get(
-                        "breach_probability",
-                        0.0,
+                anomaly_detected
+                or self._safe_bool(
+                    fusion.get(
+                        "multi_source_anomaly",
+                        False,
                     )
                 )
+                or (
+                    self._safe_float(
+                        fusion.get(
+                            "fusion_score",
+                            0.0,
+                        )
+                    )
+                    >= self.anomaly_threshold
+                )
             )
 
-            context_parts.append(
-                "SLA processing risk is elevated "
-                f"with estimated breach probability "
-                f"{breach_probability:.4f}."
+        # ------------------------------------------------------
+        # IMPORTANT:
+        # Normal records are NOT written to JSON.
+        # ------------------------------------------------------
+
+        if not anomaly_detected:
+            return None
+
+        # ------------------------------------------------------
+        # Signal names
+        # ------------------------------------------------------
+
+        signals = []
+
+        if rule_anomaly:
+            signals.append("Rule")
+
+        if isolation_anomaly:
+            signals.append(
+                "Isolation Forest"
             )
 
-        context_for_rag = " ".join(
-            context_parts
+        if clustering_anomaly:
+            signals.append(
+                "Clustering"
+            )
+
+        if behavioral_anomaly:
+            signals.append(
+                "Behavioral"
+            )
+
+        if bayesian_anomaly:
+            signals.append(
+                "Bayesian"
+            )
+
+        if (
+            ml_result.get(
+                "evidence_count",
+                0,
+            )
+            and "ML Evidence"
+            not in signals
+        ):
+
+            signals.append(
+                "ML Evidence"
+            )
+
+        severity = (
+            self._calculate_severity(
+                evidence,
+                rule_result,
+                bayesian_result,
+                ml_result,
+            )
         )
 
-        # ----------------------------------------------
-        # Final output
-        # ----------------------------------------------
+        # ------------------------------------------------------
+        # Build final record
+        # ------------------------------------------------------
 
         return {
-
             "record_id":
-                record_id,
-
-            "anomaly_detected":
-                anomaly_detected,
-
-            "detection_sources": {
-
-                "rule_based":
-                    rule_based,
-
-                "isolation_forest":
-                    isolation_forest,
-
-                "clustering":
-                    clustering,
-
-                "behavioral":
-                    behavioral,
-
-                "bayesian":
-                    bayesian,
-            },
-
-            "ml_anomaly_score":
-                round(
-                    ml_anomaly_score,
-                    6,
+                self._build_record_id(
+                    record_id,
+                    record_data,
                 ),
 
-            "rule_based_root_causes":
-                cleaned_rule_causes,
+            "entity":
+                self._build_entity(
+                    record_data
+                ),
 
-            "bayesian_probable_root_causes":
-                cleaned_bayesian_causes,
+            "final_assessment": {
+                "anomaly":
+                    True,
 
-            "context_for_rag":
-                context_for_rag,
+                "severity":
+                    severity,
+
+                "signal_count":
+                    len(signals),
+
+                "signals":
+                    ", ".join(
+                        signals
+                    ),
+            },
+
+            "bayesian":
+                bayesian_result,
+
+            "rule_engine":
+                rule_result,
+
+            "ml_evidence":
+                ml_result,
         }
 
-    # ==================================================
-    # BUILD MULTIPLE RECORDS
-    # ==================================================
+    # ==========================================================
+    # BUILD BATCH
+    # ==========================================================
 
     def build_batch(
         self,
-        records: List[Dict[str, Any]],
+        records: List[
+            Optional[
+                Dict[str, Any]
+            ]
+        ],
     ) -> List[Dict[str, Any]]:
 
-        return records
+        return [
+            record
+            for record in records
+            if isinstance(
+                record,
+                dict,
+            )
+        ]
+
+    # ==========================================================
+    # BUILD FINAL DOCUMENT
+    # ==========================================================
+
+    def build_document(
+        self,
+        records: List[
+            Optional[
+                Dict[str, Any]
+            ]
+        ],
+    ) -> Dict[str, Any]:
+
+        anomaly_records = (
+            self.build_batch(
+                records
+            )
+        )
+
+        return {
+            "project":
+                self.PROJECT_NAME,
+
+            "schema_version":
+                self.SCHEMA_VERSION,
+
+            "record_count":
+                len(
+                    anomaly_records
+                ),
+
+            "records":
+                anomaly_records,
+        }

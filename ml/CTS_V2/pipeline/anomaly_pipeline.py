@@ -69,37 +69,37 @@ from models.bayesian_network import (
 
 class AnomalyPipeline:
     """
-    Complete pharmacy anomaly detection pipeline.
+    Complete pharmacy / claims anomaly detection pipeline.
 
-    Current + Historical Data
-            ↓
-    Feature Engineering
-            ↓
-    ML Preprocessing
-            ↓
-    Rule Engine
-            ↓
-    Rule Classification
-            ↓
-    Evidence Scoring
-            ↓
-    Isolation Forest
-            ↓
-    K-Means
-            ↓
-    Evidence Fusion
-            ↓
-    Bayesian Network
-            ↓
-    Root Cause Analysis
-            ↓
-    Bayesian Root Cause
-            ↓
-    SLA Analysis
-            ↓
-    Output Builder
-            ↓
-    Final JSON
+    Flow:
+
+        Current + Historical Data
+                    ↓
+        Feature Engineering
+                    ↓
+        ML Preprocessing
+                    ↓
+        ┌───────────────────────────────┐
+        │ Rule Engine                  │
+        │ Isolation Forest             │
+        │ K-Means                      │
+        │ Behavioral Evidence          │
+        │ Data Quality Evidence        │
+        └───────────────┬───────────────┘
+                        ↓
+                Evidence Fusion
+                        ↓
+                Bayesian Network
+                        ↓
+                Root Cause Analysis
+                        ↓
+                Bayesian Root Cause
+                        ↓
+                  SLA Analysis
+                        ↓
+                  Output Builder
+                        ↓
+                    Final JSON
     """
 
     # ==================================================
@@ -117,7 +117,7 @@ class AnomalyPipeline:
         self.historical_df = historical_df.copy()
 
         # ==================================================
-        # ML FEATURES
+        # 22 ML FEATURES
         # ==================================================
 
         self.ml_features = [
@@ -202,9 +202,11 @@ class AnomalyPipeline:
 
     def build_features(self):
 
-        pipeline = FeatureEngineeringPipeline(
-            current_df=self.current_df,
-            historical_df=self.historical_df,
+        pipeline = (
+            FeatureEngineeringPipeline(
+                current_df=self.current_df,
+                historical_df=self.historical_df,
+            )
         )
 
         return pipeline.create_features()
@@ -231,9 +233,11 @@ class AnomalyPipeline:
                 f"{missing}"
             )
 
-        preprocessor = MLPreprocessor(
-            dataframe=features_df,
-            feature_columns=self.ml_features,
+        preprocessor = (
+            MLPreprocessor(
+                dataframe=features_df,
+                feature_columns=self.ml_features,
+            )
         )
 
         return preprocessor.fit_transform()
@@ -407,6 +411,12 @@ class AnomalyPipeline:
         ):
 
             # ==================================================
+            # CURRENT RECORD
+            # ==================================================
+
+            row = features_df.iloc[i]
+
+            # ==================================================
             # RULE RESULT
             # ==================================================
 
@@ -495,7 +505,6 @@ class AnomalyPipeline:
             # ==================================================
 
             fusion_rule_result = {
-
                 **rule_result,
 
                 "rule_evidence_score":
@@ -552,6 +561,7 @@ class AnomalyPipeline:
                 self.bayesian_network
                 .predict_probability(
                     {
+
                         "ML_Anomaly":
                             bool(
                                 isolation.get(
@@ -597,7 +607,8 @@ class AnomalyPipeline:
             # ==================================================
 
             root_cause_result = (
-                self.root_cause_engine.build(
+                self.root_cause_engine
+                .build(
                     classified_rule
                 )
             )
@@ -609,6 +620,13 @@ class AnomalyPipeline:
                 )
             )
 
+            rag_context = (
+                root_cause_result.get(
+                    "context_for_rag",
+                    "",
+                )
+            )
+
             # ==================================================
             # BAYESIAN ROOT CAUSES
             # ==================================================
@@ -616,62 +634,86 @@ class AnomalyPipeline:
             bayesian_probabilities = {
 
                 "ML_Anomaly": {
-                    "posterior": (
-                        0.91
-                        if isolation.get(
-                            "is_anomaly",
-                            False,
-                        )
-                        else 0.05
-                    ),
-                    "baseline": 0.15,
+
+                    "posterior":
+                        (
+                            0.91
+                            if isolation.get(
+                                "is_anomaly",
+                                False,
+                            )
+                            else 0.05
+                        ),
+
+                    "baseline":
+                        0.15,
                 },
 
                 "Rule_Anomaly": {
-                    "posterior": (
-                        0.75
-                        if rule_result.get(
-                            "rule_anomaly",
-                            False,
-                        )
-                        else 0.05
-                    ),
-                    "baseline": 0.15,
+
+                    "posterior":
+                        (
+                            0.75
+                            if rule_result.get(
+                                "rule_anomaly",
+                                False,
+                            )
+                            else 0.05
+                        ),
+
+                    "baseline":
+                        0.15,
                 },
 
                 "Behavior_Anomaly": {
-                    "posterior": (
-                        0.75
-                        if behavior_anomaly
-                        else 0.05
-                    ),
-                    "baseline": 0.20,
+
+                    "posterior":
+                        (
+                            0.75
+                            if behavior_anomaly
+                            else 0.05
+                        ),
+
+                    "baseline":
+                        0.20,
                 },
 
                 "Cluster_Anomaly": {
-                    "posterior": (
-                        0.75
-                        if clustering.get(
-                            "is_anomaly",
-                            False,
-                        )
-                        else 0.05
-                    ),
-                    "baseline": 0.20,
+
+                    "posterior":
+                        (
+                            0.75
+                            if clustering.get(
+                                "is_anomaly",
+                                False,
+                            )
+                            else 0.05
+                        ),
+
+                    "baseline":
+                        0.20,
                 },
 
                 "Data_Quality_Issue": {
-                    "posterior": (
-                        0.65
-                        if data_quality_issue
-                        else 0.05
-                    ),
-                    "baseline": 0.25,
+
+                    "posterior":
+                        (
+                            0.65
+                            if data_quality_issue
+                            else 0.05
+                        ),
+
+                    "baseline":
+                        0.25,
                 },
 
                 "SLA_Risk": {
-                    "posterior": 0.05,
-                    "baseline": 0.10,
+
+                    "posterior":
+                        0.05,
+
+                    "baseline":
+                        0.10,
                 },
             }
 
@@ -692,10 +734,14 @@ class AnomalyPipeline:
             )
 
             sla_result = (
-                self.sla_analyzer.analyze(
+                self.sla_analyzer
+                .analyze(
+
                     fused,
+
                     dataset_size=
                         total_records,
+
                     processing_time_seconds=
                         processing_time,
                 )
@@ -706,15 +752,83 @@ class AnomalyPipeline:
             # ==================================================
 
             record_id = (
-                features_df.iloc[i]
-                .get(
+                row.get(
                     "record_id",
-                    features_df.iloc[i].get(
+                    row.get(
                         "Prscrbr_NPI",
                         i,
                     ),
                 )
             )
+
+            # ==================================================
+            # OUTPUT EVIDENCE
+            # ==================================================
+
+            output_evidence = {
+
+                "rule_based": {
+
+                    "anomaly":
+                        bool(
+                            rule_result.get(
+                                "rule_anomaly",
+                                False,
+                            )
+                        ),
+
+                    "rule_result":
+                        rule_result,
+
+                    "rule_evidence":
+                        rule_evidence,
+                },
+
+                "isolation_forest":
+                    isolation,
+
+                "clustering":
+                    clustering,
+
+                "behavioral": {
+
+                    "anomaly":
+                        bool(
+                            behavior_anomaly
+                        ),
+
+                    "score":
+                        behavior_score,
+                },
+
+                "data_quality": {
+
+                    "anomaly":
+                        bool(
+                            data_quality_issue
+                        ),
+
+                    "score":
+                        data_quality_score,
+                },
+
+                "fusion":
+                    fused,
+
+                "bayesian": {
+
+                    "anomaly":
+                        bool(
+                            bayesian_probability
+                            >= 0.50
+                        ),
+
+                    "probability":
+                        float(
+                            bayesian_probability
+                        ),
+                },
+            }
 
             # ==================================================
             # FINAL OUTPUT
@@ -727,8 +841,11 @@ class AnomalyPipeline:
                     record_id=
                         record_id,
 
+                    record_data=
+                        row.to_dict(),
+
                     evidence=
-                        fused,
+                        output_evidence,
 
                     rule_root_causes=
                         root_causes,
@@ -740,6 +857,26 @@ class AnomalyPipeline:
                         sla_result,
                 )
             )
+
+            # ==================================================
+            # ADD RAG CONTEXT
+            # ==================================================
+
+            if (
+                rag_context
+                and isinstance(
+                    final_record,
+                    dict,
+                )
+            ):
+
+                final_record[
+                    "context_for_rag"
+                ] = rag_context
+
+            # ==================================================
+            # STORE RECORD
+            # ==================================================
 
             final_results.append(
                 final_record
@@ -768,14 +905,70 @@ class AnomalyPipeline:
             - start_time
         )
 
-        anomaly_count = sum(
-            1
-            for record in final_results
-            if record.get(
-                "anomaly_detected",
-                False,
+        # ==================================================
+        # CLEAN FINAL RESULTS
+        # ==================================================
+
+        valid_results = []
+
+        for record in final_results:
+
+            if not isinstance(
+                record,
+                dict,
+            ):
+                continue
+
+            # Ensure final_assessment is always a dictionary.
+            if not isinstance(
+                record.get(
+                    "final_assessment"
+                ),
+                dict,
+            ):
+
+                record[
+                    "final_assessment"
+                ] = {
+                    "anomaly": False,
+                    "severity": "LOW",
+                    "signal_count": 0,
+                    "signals": "None",
+                }
+
+            valid_results.append(
+                record
             )
+
+        final_results = valid_results
+
+        # ==================================================
+        # FINAL ANOMALY COUNT
+        # ==================================================
+
+        anomaly_count = 0
+
+        for record in final_results:
+
+            assessment = record[
+                "final_assessment"
+            ]
+
+            if assessment.get(
+                "anomaly",
+                False,
+            ):
+
+                anomaly_count += 1
+
+        normal_count = (
+            len(final_results)
+            - anomaly_count
         )
+
+        # ==================================================
+        # PIPELINE COMPLETED
+        # ==================================================
 
         print(
             "\n========== PIPELINE COMPLETED =========="
@@ -783,6 +976,11 @@ class AnomalyPipeline:
 
         print(
             "Total records:",
+            total_records,
+        )
+
+        print(
+            "Valid output records:",
             len(final_results),
         )
 
@@ -793,8 +991,7 @@ class AnomalyPipeline:
 
         print(
             "Normal records:",
-            len(final_results)
-            - anomaly_count,
+            normal_count,
         )
 
         print(
@@ -817,37 +1014,31 @@ def save_results(
     results,
     path="outputs/anomaly_results.json",
 ):
-    """
-    Save ONLY anomalous records.
 
-    The pipeline processes every record internally,
-    but normal records are excluded from the final
-    JSON output.
-    """
-
-    output_path = Path(path)
+    output_path = Path(
+        path
+    )
 
     output_path.parent.mkdir(
         parents=True,
         exist_ok=True,
     )
 
-    # ==================================================
-    # FILTER ANOMALIES ONLY
-    # ==================================================
+    output_document = {
 
-    anomaly_results = [
-        record
-        for record in results
-        if record.get(
-            "anomaly_detected",
-            False,
-        ) is True
-    ]
+        "project":
+            "TC-PUF Claims and Authorization "
+            "Data Quality Anomaly Monitor",
 
-    # ==================================================
-    # SAVE JSON
-    # ==================================================
+        "schema_version":
+            "1.0",
+
+        "record_count":
+            len(results),
+
+        "records":
+            results,
+    }
 
     with open(
         output_path,
@@ -856,40 +1047,21 @@ def save_results(
     ) as file:
 
         json.dump(
-            anomaly_results,
+            output_document,
             file,
             indent=2,
             ensure_ascii=False,
             default=str,
         )
 
-    # ==================================================
-    # OUTPUT SUMMARY
-    # ==================================================
-
     print(
-        "\n========== JSON OUTPUT =========="
-    )
-
-    print(
-        "Total pipeline records:",
-        len(results),
-    )
-
-    print(
-        "Anomaly records saved:",
-        len(anomaly_results),
-    )
-
-    print(
-        "Normal records excluded:",
-        len(results)
-        - len(anomaly_results),
-    )
-
-    print(
-        "Results saved to:",
+        "\nResults saved to:",
         output_path,
+    )
+
+    print(
+        "Records written:",
+        len(results),
     )
 
     return output_path

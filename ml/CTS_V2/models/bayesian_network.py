@@ -122,14 +122,13 @@ class BayesianAnomalyNetwork:
         # --------------------------------------------------
         # Overall anomaly CPD
         # --------------------------------------------------
-        #
+
         # Six binary evidence variables produce:
         #
         # 2^6 = 64 evidence combinations.
         #
         # We generate the probabilities automatically
         # instead of manually writing all 64 combinations.
-        #
 
         overall_cpd = self._build_overall_cpd()
 
@@ -188,6 +187,7 @@ class BayesianAnomalyNetwork:
         # ML and behavioral evidence receive stronger
         # weights than SLA/data-quality indicators because
         # those are closer to anomaly behavior itself.
+
         weights = {
             "ML_Anomaly": 0.25,
             "Rule_Anomaly": 0.20,
@@ -198,6 +198,7 @@ class BayesianAnomalyNetwork:
         }
 
         # Generate all 64 binary combinations.
+
         combinations = []
 
         for number in range(64):
@@ -205,6 +206,7 @@ class BayesianAnomalyNetwork:
             state = []
 
             for position in range(6):
+
                 state.append(
                     (number >> position) & 1
                 )
@@ -231,9 +233,10 @@ class BayesianAnomalyNetwork:
 
             # Convert weighted evidence into a
             # probability-like value.
-            #
+
             # Baseline probability is kept small when
             # no evidence is present.
+
             anomaly_probability = min(
                 0.99,
                 0.01 + (0.98 * risk_score)
@@ -300,6 +303,7 @@ class BayesianAnomalyNetwork:
         for every row.
 
         Required columns:
+
             ML_Anomaly
             Rule_Anomaly
             Behavior_Anomaly
@@ -386,10 +390,15 @@ class BayesianAnomalyNetwork:
         self,
         path: str = (
             "models/artifacts/"
-            "bayesian_network.joblib"
+            "bayesian_network.pkl"
         ),
     ):
-        """Save Bayesian Network."""
+        """
+        Save Bayesian Network.
+
+        The object is serialized using joblib,
+        but the artifact is stored with a .pkl extension.
+        """
 
         self._check_fitted()
 
@@ -416,10 +425,14 @@ class BayesianAnomalyNetwork:
         cls,
         path: str = (
             "models/artifacts/"
-            "bayesian_network.joblib"
+            "bayesian_network.pkl"
         ),
     ):
-        """Load a saved Bayesian Network."""
+        """
+        Load a saved Bayesian Network.
+
+        The .pkl file was serialized using joblib.
+        """
 
         path = Path(path)
 
