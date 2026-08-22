@@ -2,51 +2,36 @@
 @tailwind components;
 @tailwind utilities;
 
-@layer base {
-  :root {
-    --font-display: 'Plus Jakarta Sans', sans-serif;
-    --font-body: 'Inter', sans-serif;
-    --font-mono: 'IBM Plex Mono', monospace;
-  }
-
-  body {
-    font-family: var(--font-body);
-    background-color: #06080f;
-    color: #e2e8f0;
-    -webkit-font-smoothing: antialiased;
-  }
-
-  /* Display headings use Syne */
-  h1, h2, h3, .font-display {
-    font-family: var(--font-display);
-  }
-
-  code, pre, .font-mono {
-    font-family: var(--font-mono);
-  }
+:root {
+  --background:           0 0% 100%;
+  --foreground:           222 47% 11%;
+  --card:                 0 0% 100%;
+  --card-foreground:      222 47% 11%;
+  --border:               214 32% 91%;
+  --primary:              221 83% 53%;
+  --primary-foreground:   210 40% 98%;
+  --secondary:            210 40% 96%;
+  --secondary-foreground: 222 47% 11%;
+  --muted:                210 40% 96%;
+  --muted-foreground:     215 16% 47%;
+  --accent:               210 40% 96%;
+  --accent-foreground:    222 47% 11%;
+  --destructive:          0 84% 60%;
+  --destructive-foreground: 210 40% 98%;
 }
 
-/* Respect reduced motion */
-@media (prefers-reduced-motion: reduce) {
-  .pipeline-node-active { animation: none; opacity: 0.7; }
-  .data-flow-line { animation: none; }
-  * { transition-duration: 0.01ms !important; }
-}
-@keyframes pipeline-pulse {
-  0%, 100% { opacity: 0.3; }
-  50% { opacity: 1; }
+* {
+  box-sizing: border-box;
 }
 
-@keyframes data-flow {
-  0% { stroke-dashoffset: 40; }
-  100% { stroke-dashoffset: 0; }
+body {
+  background-color: hsl(var(--background));
+  color: hsl(var(--foreground));
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
 }
 
-.pipeline-node-active {
-  animation: pipeline-pulse 2s ease-in-out infinite;
-}
-
-.data-flow-line {
-  stroke-dasharray: 6 4;
-  animation: data-flow 1.2s linear infinite;
+@layer utilities {
+  .scrollbar-hide::-webkit-scrollbar { display: none; }
+  .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
 }

@@ -378,3 +378,45 @@ async def anomaly_websocket(websocket: WebSocket):
                 await websocket.send_json({"type": "PONG"})
     except WebSocketDisconnect:
         anomaly_manager.disconnect(websocket)
+
+
+# ── Assign anomaly to a worker ────────────────────────────────────────────
+
+class AssignWorkerRequest(BaseModel):
+    worker_id: str
+
+
+@router.patch("/{anomaly_id}/assign", response_model=AnomalyResponse)
+def assign_anomaly_to_worker(
+    anomaly_id: str,
+    payload:    AssignWorkerRequest,
+    db:         Session = Depends(get_db),
+    _:          User    = Depends(require_admin),
+):
+    """
+    Admin assigns an anomaly to a specific worker.
+    Validates that the worker exists and is active before assigning.
+    """
+    from app.models.user import User as UserModel   # avoid circular at module level
+
+    anomaly = db.query(Anomaly).filter(Anomaly.id == anomaly_id).first()
+    if not anomaly:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+                            detail="Anomaly not found.")
+
+    worker = db.query(UserModel).filter(
+        UserModel.id == payload.worker_id,
+        UserModel.is_active == True,          # noqa: E712
+    ).first()
+    if not worker:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+                            detail="Worker not found or is inactive.")
+
+    anomaly.assigned_to = payload.worker_id
+    # Move to IN_PROGRESS automatically when assigned
+    if anomaly.status == "OPEN":
+        anomaly.status = "IN_PROGRESS"
+
+    db.commit()
+    db.refresh(anomaly)
+    return anomaly

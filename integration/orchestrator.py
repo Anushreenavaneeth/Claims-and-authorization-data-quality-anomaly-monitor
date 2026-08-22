@@ -25,6 +25,19 @@ All three datasets use the SAME SLA engine and SAME RAG connector.
 
 from __future__ import annotations
 
+# ── Path bootstrap (needed when run as a script) ──────────────────────────
+# Ensures the project root is on sys.path so `from integration import ...`
+# works whether this file is invoked as:
+#   python integration/orchestrator.py   (script)
+#   python -m integration.orchestrator   (module)
+#   import integration.orchestrator      (library)
+import sys as _sys
+from pathlib import Path as _Path
+_project_root = _Path(__file__).resolve().parent.parent
+if str(_project_root) not in _sys.path:
+    _sys.path.insert(0, str(_project_root))
+# ──────────────────────────────────────────────────────────────────────────
+
 import json
 import logging
 import sqlite3
@@ -329,22 +342,24 @@ def process_dataset(
                 for ve in validation_errors:
                     record.processing_errors.append(f"Validation: {ve}")
 
-            # 3. SLA engine
-            apply_sla(record)
+            if record.anomaly.is_anomaly:
+                # ── ANOMALOUS RECORDS: full Quality → SLA → RAG pipeline ──
+                # 3. SLA engine (only for anomalies)
+                apply_sla(record)
 
-            # 4. RAG recommendation
-            apply_rag(record)
+                # 4. RAG recommendation (only for anomalies)
+                apply_rag(record)
 
-            # 5. Mark complete
-            record.processing_status = "complete"
+                record.processing_status = "complete"
+                anomalies += 1
+            else:
+                # ── NORMAL RECORDS: skip SLA + RAG, store minimal record ──
+                record.processing_status = "normal"
 
-            # 6. Persist
+            # 5. Persist
             if not anomalies_only or record.anomaly.is_anomaly:
                 _upsert_result(record)
                 persisted += 1
-
-            if record.anomaly.is_anomaly:
-                anomalies += 1
 
             processed += 1
 

@@ -27,6 +27,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.dependencies.auth import require_admin
 from app.models.anomaly import Anomaly
+from app.models.dataset_version import DatasetVersion
 from app.models.user import User
 from app.realtime.manager import anomaly_manager
 from app.schemas.anomaly import AnomalyResponse
@@ -215,17 +216,51 @@ async def upload_dataset(
         if anomalies_created:
             db.commit()
 
+    # ── Dataset versioning ────────────────────────────────────────────────
+    # Mark all existing versions of this dataset type as not current,
+    # then insert a new version row. Old data is preserved — never deleted.
+    try:
+        db.query(DatasetVersion).filter(
+            DatasetVersion.dataset_type == source_type,
+            DatasetVersion.is_current == True,          # noqa: E712
+        ).update({"is_current": False})
+
+        prev_count = db.query(DatasetVersion).filter(
+            DatasetVersion.dataset_type == source_type
+        ).count()
+
+        version_row = DatasetVersion(
+            id            = str(uuid.uuid4()),
+            dataset_type  = source_type,
+            version       = prev_count + 1,
+            upload_time   = datetime.now(timezone.utc),
+            filename      = file.filename,
+            record_count  = report["total_records"],
+            valid_count   = report["valid_records"],
+            anomaly_count = anomalies_created,
+            status        = "complete",
+            is_current    = True,
+            uploaded_by   = str(admin.id),
+        )
+        db.add(version_row)
+        db.commit()
+    except Exception:
+        # Versioning failure must not block the upload response
+        db.rollback()
+
+    now = datetime.now(timezone.utc).isoformat()
+
     return ValidationReport(
-        upload_id       = upload_id,
-        filename        = file.filename,
-        source_type     = source_type,
-        total_records   = report["total_records"],
-        valid_records   = report["valid_records"],
-        invalid_records = report["invalid_records"],
-        status          = report["status"],
-        issues          = report["issues"],
+        upload_id         = upload_id,
+        filename          = file.filename,
+        source_type       = source_type,
+        total_records     = report["total_records"],
+        valid_records     = report["valid_records"],
+        invalid_records   = report["invalid_records"],
+        status            = report["status"],
+        issues            = report["issues"],
         anomalies_created = anomalies_created,
-        timestamp       = datetime.now(timezone.utc).isoformat(),
+        timestamp         = now,
     )
 
 
@@ -234,3 +269,34 @@ def _safe_float(val) -> Optional[float]:
         return float(val) if val is not None else None
     except (ValueError, TypeError):
         return None
+
+
+# ── Dataset versions list endpoint ────────────────────────────────────────
+
+@router.get("/versions")
+def list_dataset_versions(
+    dataset_type: Optional[str] = None,
+    db:           Session       = Depends(get_db),
+    _:            User          = Depends(require_admin),
+):
+    """List all dataset upload versions. Optionally filter by dataset_type."""
+    q = db.query(DatasetVersion)
+    if dataset_type:
+        q = q.filter(DatasetVersion.dataset_type == dataset_type.upper())
+    rows = q.order_by(DatasetVersion.upload_time.desc()).limit(100).all()
+    return [
+        {
+            "id":           r.id,
+            "dataset_type": r.dataset_type,
+            "version":      r.version,
+            "upload_time":  r.upload_time.isoformat() if r.upload_time else None,
+            "filename":     r.filename,
+            "record_count": r.record_count,
+            "valid_count":  r.valid_count,
+            "anomaly_count":r.anomaly_count,
+            "status":       r.status,
+            "is_current":   r.is_current,
+            "uploaded_by":  r.uploaded_by,
+        }
+        for r in rows
+    ]

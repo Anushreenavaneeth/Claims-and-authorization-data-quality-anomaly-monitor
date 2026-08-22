@@ -2,7 +2,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.routers import auth, protected, admin, anomalies, ml, datasets, dashboard, pipeline
+from app.routers import auth, protected, admin, anomalies, ml, datasets, dashboard, pipeline, reviews, actions
+from app.database import init_db
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -18,6 +19,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ── Startup ────────────────────────────────────────────────────────────────
+@app.on_event("startup")
+def on_startup():
+    init_db()
+
 # ── Routers ───────────────────────────────────────────────────────────────
 app.include_router(auth.router)
 app.include_router(protected.router)
@@ -25,8 +31,10 @@ app.include_router(admin.router)
 app.include_router(anomalies.router)
 app.include_router(ml.router)
 app.include_router(datasets.router)
-app.include_router(dashboard.router)   # GET /api/dashboard/*
-app.include_router(pipeline.router)    # POST /api/process
+app.include_router(dashboard.router)   # GET /api/dashboard/*, /api/anomalies/integrated, etc.
+app.include_router(pipeline.router)    # POST /api/process, GET /api/process/status
+app.include_router(reviews.router)     # POST/GET/PATCH /reviews
+app.include_router(actions.router)     # POST/GET/PATCH /actions
 
 
 @app.get("/")

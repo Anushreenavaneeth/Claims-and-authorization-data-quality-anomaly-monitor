@@ -7,7 +7,7 @@ Usage:
     python seed.py
 """
 
-from app.database import SessionLocal
+from app.database import SessionLocal, init_db
 from app.models.user import User
 from app.services.auth_service import hash_password
 from app.utils.enums import UserRole
@@ -29,6 +29,7 @@ SEED_USERS = [
 
 
 def seed():
+    init_db()   # create tables if they don't exist
     db = SessionLocal()
     try:
         for data in SEED_USERS:
