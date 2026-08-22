@@ -267,10 +267,13 @@ class IsolationForestDetector:
 
     def save(
         self,
-        path: str = "models/artifacts/isolation_forest.joblib",
+        path: str = "models/artifacts/isolation_forest.pkl",
     ):
         """
         Save the trained detector.
+
+        The model is serialized using joblib,
+        but stored with a .pkl extension.
         """
 
         self._check_fitted()
@@ -296,10 +299,13 @@ class IsolationForestDetector:
     @classmethod
     def load(
         cls,
-        path: str = "models/artifacts/isolation_forest.joblib",
+        path: str = "models/artifacts/isolation_forest.pkl",
     ):
         """
         Load a previously trained detector.
+
+        The file is expected to be a joblib-serialized
+        object stored with a .pkl extension.
         """
 
         path = Path(path)

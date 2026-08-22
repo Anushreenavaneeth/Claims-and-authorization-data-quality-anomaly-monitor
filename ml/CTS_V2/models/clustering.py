@@ -301,10 +301,13 @@ class KMeansClusterDetector:
 
     def save(
         self,
-        path: str = "models/artifacts/kmeans.joblib",
+        path: str = "models/artifacts/kmeans.pkl",
     ):
         """
-        Save the trained clustering model.
+        Save the trained K-Means detector.
+
+        The model is serialized using joblib,
+        but stored with a .pkl extension.
         """
 
         self._check_fitted()
@@ -330,10 +333,13 @@ class KMeansClusterDetector:
     @classmethod
     def load(
         cls,
-        path: str = "models/artifacts/kmeans.joblib",
+        path: str = "models/artifacts/kmeans.pkl",
     ):
         """
         Load a previously trained K-Means detector.
+
+        The file is expected to be a joblib-serialized
+        object stored with a .pkl extension.
         """
 
         path = Path(path)
@@ -368,8 +374,7 @@ class KMeansClusterDetector:
             "n_clusters": self.n_clusters,
             "n_init": self.model.n_init,
             "max_iter": self.model.max_iter,
-            "random_state":
-                self.model.random_state,
+            "random_state": self.model.random_state,
             "feature_count":
                 len(self.feature_columns)
                 if self.feature_columns
